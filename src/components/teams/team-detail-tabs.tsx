@@ -298,7 +298,7 @@ export function TeamDetailTabs({
   ];
 
   return (
-    <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== "schedule") setScheduleFilter("all"); }} className="flex-1 min-h-0 flex flex-col md:block">
+    <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== "schedule") setScheduleFilter("all"); }} className="flex-1 min-h-0 flex flex-col md:block gap-0">
       <div className="flex shrink-0 border-b border-border/50 overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0 scrollbar-none">
         {tabs.map((tab) => {
           const active = activeTab === tab.value;
@@ -321,7 +321,7 @@ export function TeamDetailTabs({
         })}
       </div>
 
-      <TabsContent value="overview">
+      <TabsContent value="overview" className="overflow-y-auto min-h-0">
         <div className="grid grid-cols-2 gap-2 md:gap-3 mb-4 md:mb-6">
           <button type="button" className="text-left" onClick={() => goToSchedule("games")}>
             <StatCard label="Upcoming Games" value={games.length} clickable />
@@ -385,7 +385,7 @@ export function TeamDetailTabs({
         )}
       </TabsContent>
 
-      <TabsContent value="schedule">
+      <TabsContent value="schedule" className="overflow-y-auto min-h-0">
         <div className="space-y-3 md:space-y-4">
           {/* Filter chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none -mx-1 px-1">
@@ -656,7 +656,7 @@ export function TeamDetailTabs({
         </Dialog>
       </TabsContent>
 
-      <TabsContent value="staff">
+      <TabsContent value="staff" className="overflow-y-auto min-h-0">
         <div className="space-y-6">
           <Card className="rounded-2xl border-border/50">
             <CardHeader className="pb-2">
@@ -725,12 +725,12 @@ export function TeamDetailTabs({
         </div>
       </TabsContent>
 
-      <TabsContent value="roster">
+      <TabsContent value="roster" className="overflow-y-auto min-h-0">
         <TeamRoster teamId={team.id} canManage={canManage} />
       </TabsContent>
 
       {canManage && (
-        <TabsContent value="settings">
+        <TabsContent value="settings" className="overflow-y-auto min-h-0">
           <div className="space-y-8">
             <TeamProfileSettings team={team} canManage={canManage} />
             <TeamJobSettings teamId={team.id} orgTemplates={jobTemplates} teamTemplates={teamSpecificTemplates} />

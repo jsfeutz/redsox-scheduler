@@ -170,9 +170,15 @@ export function ScheduleView({
   userTeams = [],
 }: ScheduleViewProps) {
   const isMobile = useIsMobile();
-  const [viewInitialized, setViewInitialized] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">("agenda");
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">(() => {
+    if (typeof window === "undefined") return "agenda";
+    const saved = sessionStorage.getItem("schedule-viewMode");
+    if (saved && ["month", "week", "day", "agenda"].includes(saved)) {
+      return saved as "month" | "week" | "day" | "agenda";
+    }
+    return window.matchMedia("(max-width: 767px)").matches ? "agenda" : "month";
+  });
   const [filterTeamId, setFilterTeamId] = useState("");
   const [filterSubFacilityId, setFilterSubFacilityId] = useState("");
   const [events, setEvents] = useState<ScheduleEventData[]>([]);
@@ -191,11 +197,8 @@ export function ScheduleView({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!viewInitialized) {
-      setViewMode(isMobile ? "agenda" : "month");
-      setViewInitialized(true);
-    }
-  }, [isMobile, viewInitialized]);
+    sessionStorage.setItem("schedule-viewMode", viewMode);
+  }, [viewMode]);
 
   const filteredEvents = showAwayGames
     ? events
