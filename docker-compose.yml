@@ -1,0 +1,69 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ringers
+      POSTGRES_USER: ringers
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ringers -d ringers"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ringers:${DB_PASSWORD}@db:5432/ringers
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
+      APP_URL: ${APP_URL:-http://localhost:3001}
+      AWS_ACCESS_KEY_ID_SNS: ${AWS_ACCESS_KEY_ID_SNS}
+      AWS_SECRET_ACCESS_KEY_SNS: ${AWS_SECRET_ACCESS_KEY_SNS}
+      AWS_REGION_SNS: ${AWS_REGION_SNS:-us-east-2}
+      CRON_SECRET: ${CRON_SECRET}
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+
+  cron:
+    image: alpine:3.19
+    depends_on:
+      - app
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+      APP_HOST: app:3000
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache curl
+        echo "*/30 * * * * curl -sf http://$$APP_HOST/api/cron/reminders?secret=$$CRON_SECRET > /proc/1/fd/1 2>&1" | crontab -
+        crond -f -l 2
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,0 +1,576 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  SCHEDULE_MANAGER
+  FACILITY_MANAGER
+  COACH
+  TEAM_ADMIN
+}
+
+enum TeamRole {
+  HEAD_COACH
+  ASSISTANT_COACH
+  TEAM_MANAGER
+}
+
+enum EventType {
+  GAME
+  PRACTICE
+  OTHER
+  CLUB_EVENT
+}
+
+enum BlackoutScope {
+  ORG_WIDE
+  FACILITY
+}
+
+enum EventPriority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum VolunteerSlotStatus {
+  OPEN
+  FILLED
+  COMPLETED
+  CANCELLED
+}
+
+enum JobScope {
+  TEAM
+  FACILITY
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum NotificationType {
+  JOB_REMINDER
+  SCHEDULE_CHANGE
+  SIGNUP_CONFIRM
+  CANCELLATION
+}
+
+enum NotificationChannel {
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+}
+
+model Organization {
+  id                     String   @id @default(cuid())
+  name                   String
+  teamJobsCountHours     Boolean  @default(false)
+  teamJobsPublicSignup   Boolean  @default(true)
+  requiredVolunteerHours Float    @default(0)
+  primaryColor           String   @default("#dc2626")
+  themeMode              String   @default("light")
+  smsEnabled             Boolean  @default(true)
+  reminderHoursBefore    String   @default("24,2")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  users            User[]
+  facilities       Facility[]
+  teams            Team[]
+  seasons          Season[]
+  jobTemplates     JobTemplate[]
+  volunteerParents VolunteerParent[]
+  invitations      Invitation[]
+  blackoutDates    BlackoutDate[]
+  schedulingRules  SchedulingRule[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  phone          String?
+  smsEnabled     Boolean  @default(true)
+  role           UserRole @default(COACH)
+  active         Boolean  @default(true)
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  coachOfTeams          Team[]          @relation("HeadCoach")
+  jobAssignments        JobAssignment[]
+  teamMembers           TeamMember[]
+  slotRequestsMade      SlotRequest[]   @relation("SlotRequestsMade")
+  slotRequestsResponded SlotRequest[]   @relation("SlotRequestsResponded")
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamRole
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  email          String
+  role           UserRole
+  token          String           @unique @default(cuid())
+  status         InvitationStatus @default(PENDING)
+  organizationId String
+  invitedById    String?
+  teamId         String?
+  teamRole       TeamRole?
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  team         Team?        @relation(fields: [teamId], references: [id])
+
+  @@index([token])
+  @@index([organizationId])
+}
+
+model Facility {
+  id             String   @id @default(cuid())
+  name           String
+  address        String?
+  googleMapsUrl  String?
+  notes          String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization       Organization            @relation(fields: [organizationId], references: [id])
+  subFacilities      SubFacility[]
+  facilityJobConfigs FacilityJobConfig[]
+  blackoutDates      BlackoutDate[]
+
+  @@index([organizationId])
+}
+
+model SubFacility {
+  id         String   @id @default(cuid())
+  name       String
+  type       String?
+  capacity   Int?
+  facilityId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  facility       Facility        @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  scheduleEvents ScheduleEvent[]
+
+  @@index([facilityId])
+}
+
+model Team {
+  id             String   @id @default(cuid())
+  name           String
+  ageGroup       String?
+  icon           String?
+  color          String   @default("#3b82f6")
+  active         Boolean  @default(true)
+  headCoachId    String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization      Organization        @relation(fields: [organizationId], references: [id])
+  headCoach         User?               @relation("HeadCoach", fields: [headCoachId], references: [id])
+  scheduleEvents    ScheduleEvent[]
+  seasonTeams       SeasonTeam[]
+  members           TeamMember[]
+  invitations       Invitation[]
+  slotRequests      SlotRequest[]       @relation("SlotRequestsRequesting")
+  jobOverrides      TeamJobOverride[]
+  teamJobTemplates  JobTemplate[]       @relation("TeamJobTemplates")
+  players           Player[]
+  schedulingRules   SchedulingRule[]
+
+  @@index([organizationId])
+}
+
+model Season {
+  id             String   @id @default(cuid())
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  scheduleEvents ScheduleEvent[]
+  seasonTeams    SeasonTeam[]
+  gameJobs       GameJob[]
+
+  @@index([organizationId])
+}
+
+model SeasonTeam {
+  id       String @id @default(cuid())
+  seasonId String
+  teamId   String
+
+  season    Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team      Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  jobConfigs SeasonJobConfig[]
+
+  @@unique([seasonId, teamId])
+}
+
+model SeasonJobConfig {
+  id            String    @id @default(cuid())
+  seasonTeamId  String
+  jobTemplateId String
+  eventType     EventType
+  slotsNeeded   Int       @default(1)
+  createdAt     DateTime  @default(now())
+
+  seasonTeam  SeasonTeam  @relation(fields: [seasonTeamId], references: [id], onDelete: Cascade)
+  jobTemplate JobTemplate @relation(fields: [jobTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonTeamId, jobTemplateId, eventType])
+  @@index([seasonTeamId])
+}
+
+model FacilityJobConfig {
+  id            String   @id @default(cuid())
+  facilityId    String
+  jobTemplateId String
+  slotsNeeded   Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  facility    Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  jobTemplate JobTemplate @relation(fields: [jobTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, jobTemplateId])
+  @@index([facilityId])
+}
+
+model ScheduleEvent {
+  id                String        @id @default(cuid())
+  title             String
+  type              EventType
+  priority          EventPriority @default(NORMAL)
+  startTime         DateTime
+  endTime           DateTime
+  notes             String?
+  isRecurring       Boolean       @default(false)
+  recurrenceRule    String?
+  recurrenceGroupId String?
+  teamId            String?
+  subFacilityId     String?
+  seasonId          String?
+  customLocation    String?
+  customLocationUrl String?
+  gameVenue         String?
+  cancelledByBumpId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  team           Team?           @relation(fields: [teamId], references: [id])
+  subFacility    SubFacility?    @relation(fields: [subFacilityId], references: [id])
+  season         Season?         @relation(fields: [seasonId], references: [id])
+  gameJobs       GameJob[]
+  volunteerSlots VolunteerSlot[]
+  slotRequests   SlotRequest[]
+
+  @@index([teamId])
+  @@index([subFacilityId])
+  @@index([startTime])
+  @@index([seasonId])
+  @@index([recurrenceGroupId])
+}
+
+model JobTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  scope          JobScope
+  hoursPerGame   Float    @default(2)
+  maxSlots       Int      @default(1)
+  forEventType   String   @default("ALL")
+  active         Boolean  @default(true)
+  organizationId String
+  teamId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization       Organization          @relation(fields: [organizationId], references: [id])
+  team               Team?                 @relation("TeamJobTemplates", fields: [teamId], references: [id], onDelete: Cascade)
+  gameJobs           GameJob[]
+  seasonJobConfigs   SeasonJobConfig[]
+  facilityJobConfigs FacilityJobConfig[]
+  teamOverrides      TeamJobOverride[]
+
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model TeamJobOverride {
+  id            String  @id @default(cuid())
+  teamId        String
+  jobTemplateId String
+  active        Boolean @default(true)
+
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  jobTemplate JobTemplate @relation(fields: [jobTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, jobTemplateId])
+  @@index([teamId])
+}
+
+model GameJob {
+  id                   String   @id @default(cuid())
+  jobTemplateId        String
+  scheduleEventId      String?
+  seasonId             String?
+  teamId               String?
+  slotsNeeded          Int      @default(1)
+  isPublic             Boolean  @default(false)
+  overrideName         String?
+  overrideDescription  String?
+  overrideHoursPerGame Float?
+  createdAt            DateTime @default(now())
+
+  jobTemplate   JobTemplate    @relation(fields: [jobTemplateId], references: [id])
+  scheduleEvent ScheduleEvent? @relation(fields: [scheduleEventId], references: [id], onDelete: Cascade)
+  season        Season?        @relation(fields: [seasonId], references: [id])
+  assignments   JobAssignment[]
+
+  @@index([scheduleEventId])
+  @@index([seasonId])
+  @@index([isPublic])
+}
+
+model JobAssignment {
+  id                String    @id @default(cuid())
+  gameJobId         String
+  userId            String?
+  name              String?
+  email             String?
+  phone             String?
+  playerName        String?
+  playerVolunteerId String?
+  hoursEarned       Float?
+  cancelToken       String   @unique @default(cuid())
+  cancelledAt       DateTime?
+  createdAt         DateTime @default(now())
+
+  gameJob         GameJob          @relation(fields: [gameJobId], references: [id], onDelete: Cascade)
+  user            User?            @relation(fields: [userId], references: [id])
+  playerVolunteer PlayerVolunteer? @relation(fields: [playerVolunteerId], references: [id], onDelete: SetNull)
+
+  @@index([gameJobId])
+  @@index([email])
+  @@index([cancelToken])
+  @@index([playerVolunteerId])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([email])
+}
+
+model VolunteerSlot {
+  id              String              @id @default(cuid())
+  name            String
+  description     String?
+  slotsNeeded     Int                 @default(1)
+  durationMinutes Int                 @default(120)
+  status          VolunteerSlotStatus @default(OPEN)
+  scheduleEventId String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  scheduleEvent ScheduleEvent    @relation(fields: [scheduleEventId], references: [id], onDelete: Cascade)
+  signups       VolunteerSignup[]
+
+  @@index([scheduleEventId])
+}
+
+model VolunteerSignup {
+  id                String   @id @default(cuid())
+  volunteerSlotId   String
+  volunteerParentId String?
+  name              String
+  email             String
+  hoursCompleted    Float    @default(0)
+  isCompleted       Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  volunteerSlot   VolunteerSlot   @relation(fields: [volunteerSlotId], references: [id], onDelete: Cascade)
+  volunteerParent VolunteerParent? @relation(fields: [volunteerParentId], references: [id])
+
+  @@index([volunteerSlotId])
+  @@index([email])
+}
+
+model VolunteerParent {
+  id             String   @id @default(cuid())
+  name           String?
+  email          String
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  signups      VolunteerSignup[]
+
+  @@unique([email, organizationId])
+  @@index([organizationId])
+}
+
+model SlotRequest {
+  id                String        @id @default(cuid())
+  scheduleEventId   String
+  requestingTeamId  String
+  requestedById     String
+  reason            String?
+  status            RequestStatus @default(PENDING)
+  respondedById     String?
+  respondedAt       DateTime?
+  createdAt         DateTime      @default(now())
+
+  scheduleEvent  ScheduleEvent @relation(fields: [scheduleEventId], references: [id], onDelete: Cascade)
+  requestingTeam Team          @relation("SlotRequestsRequesting", fields: [requestingTeamId], references: [id])
+  requestedBy    User          @relation("SlotRequestsMade", fields: [requestedById], references: [id])
+  respondedBy    User?         @relation("SlotRequestsResponded", fields: [respondedById], references: [id])
+
+  @@index([scheduleEventId])
+  @@index([requestingTeamId])
+  @@index([requestedById])
+  @@index([status])
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  name      String
+  number    String?
+  teamId    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team       Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  volunteers PlayerVolunteer[]
+
+  @@index([teamId])
+}
+
+model PlayerVolunteer {
+  id           String   @id @default(cuid())
+  playerId     String
+  name         String
+  email        String?
+  phone        String?
+  relationship String   @default("Parent")
+  createdAt    DateTime @default(now())
+
+  player      Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  assignments JobAssignment[]
+
+  @@index([playerId])
+  @@index([email])
+}
+
+model NotificationLog {
+  id               String              @id @default(cuid())
+  type             NotificationType
+  channel          NotificationChannel
+  recipientPhone   String?
+  recipientEmail   String?
+  message          String
+  status           NotificationStatus
+  error            String?
+  relatedEventId   String?
+  relatedJobId     String?
+  relatedAssignId  String?
+  reminderKey      String?
+  sentAt           DateTime            @default(now())
+
+  @@index([type])
+  @@index([relatedEventId])
+  @@index([relatedJobId])
+  @@index([relatedAssignId])
+  @@index([reminderKey])
+  @@index([sentAt])
+}
+
+model BlackoutDate {
+  id             String        @id @default(cuid())
+  title          String
+  startDate      DateTime
+  endDate        DateTime
+  scope          BlackoutScope
+  facilityId     String?
+  organizationId String
+  eventTypes     String        @default("ALL")
+  createdAt      DateTime      @default(now())
+
+  facility     Facility?    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([facilityId])
+  @@index([startDate, endDate])
+}
+
+model SchedulingRule {
+  id             String   @id @default(cuid())
+  teamId         String
+  subFacilityId  String?
+  dayOfWeek      Int
+  eventType      String   @default("ALL")
+  priority       Int      @default(1)
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  team         Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([dayOfWeek])
+}
