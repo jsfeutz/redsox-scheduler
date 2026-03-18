@@ -20,16 +20,15 @@ import {
 import { useState } from "react";
 
 const primaryTabs = [
-  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/dashboard/schedules", label: "Schedule", icon: Calendar },
-  { href: "/dashboard/volunteers", label: "Volunteers", icon: Heart },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard/volunteers", label: "Jobs", icon: Heart },
+  { href: "/dashboard/teams", label: "Teams", icon: Users },
+  { href: "/help-wanted", label: "Vol. Signup", icon: Megaphone },
 ];
 
 const moreTabs: { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
-  { href: "/dashboard/teams", label: "Teams", icon: Users },
-  { href: "/help-wanted", label: "Job Signup", icon: Megaphone },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
   { href: "/dashboard/profile", label: "Profile", icon: UserCog },
 ];
@@ -95,8 +94,7 @@ export function BottomNav() {
         <div className="flex items-stretch justify-around px-2">
           {primaryTabs.map((tab) => {
             const active =
-              pathname === tab.href ||
-              (tab.href !== "/dashboard" && pathname.startsWith(tab.href));
+              pathname === tab.href || pathname.startsWith(tab.href + "/");
             return (
               <Link
                 key={tab.href}

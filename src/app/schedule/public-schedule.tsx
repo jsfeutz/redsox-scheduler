@@ -961,6 +961,9 @@ function EventDetailModal({
                           <PublicJobSignup
                             jobId={job.id}
                             jobName={job.name}
+                            eventTitle={event.title}
+                            eventDate={format(parseISO(event.startTime), "EEE, MMM d")}
+                            eventTime={`${format(parseISO(event.startTime), "h:mm a")} – ${format(parseISO(event.endTime), "h:mm a")}`}
                             onSuccess={() => handleJobSignupSuccess(job.id)}
                           />
                         )}

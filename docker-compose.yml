@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ringers
       POSTGRES_USER: ringers
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ringers2026}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -31,20 +31,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://ringers:${DB_PASSWORD}@db:5432/ringers
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
-      SMTP_HOST: ${SMTP_HOST:-localhost}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_FROM: ${SMTP_FROM:-noreply@example.com}
-      APP_URL: ${APP_URL:-http://localhost:3001}
-      AWS_ACCESS_KEY_ID_SNS: ${AWS_ACCESS_KEY_ID_SNS}
-      AWS_SECRET_ACCESS_KEY_SNS: ${AWS_SECRET_ACCESS_KEY_SNS}
-      AWS_REGION_SNS: ${AWS_REGION_SNS:-us-east-2}
-      CRON_SECRET: ${CRON_SECRET}
+      DATABASE_URL: postgresql://ringers:${DB_PASSWORD:-ringers2026}@db:5432/ringers
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://redsox.feutz.com}
+      APP_URL: ${APP_URL:-https://redsox.feutz.com}
+      CRON_SECRET: ${CRON_SECRET:-dev-cron-secret}
     ports:
       - "3001:3000"
     restart: unless-stopped
@@ -54,7 +46,7 @@ services:
     depends_on:
       - app
     environment:
-      CRON_SECRET: ${CRON_SECRET}
+      CRON_SECRET: ${CRON_SECRET:-dev-cron-secret}
       APP_HOST: app:3000
     entrypoint: /bin/sh
     command:

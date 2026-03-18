@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,8 +43,8 @@ import {
   ChevronDown,
   Loader2,
   Save,
-  Palette,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { TemplateForm } from "@/components/jobs/template-form";
@@ -71,6 +71,7 @@ interface TeamInfo {
   icon: string | null;
   color: string;
   ageGroup: string | null;
+  active: boolean;
   headCoach: { id: string; name: string; email: string } | null;
   members: TeamMember[];
   seasons: Season[];
@@ -160,7 +161,7 @@ interface TeamDetailTabsProps {
   teamRoles: TeamRole[];
   jobTemplates: JobTemplateSummary[];
   teamSpecificTemplates: TeamSpecificTemplate[];
-  signupStats: { totalSlots: number; filledSlots: number };
+  signupStats?: { totalSlots: number; filledSlots: number };
   canManage: boolean;
   scheduling: SchedulingData;
 }
@@ -177,7 +178,6 @@ export function TeamDetailTabs({
   teamRoles,
   jobTemplates,
   teamSpecificTemplates,
-  signupStats,
   canManage,
   scheduling,
 }: TeamDetailTabsProps) {
@@ -188,7 +188,63 @@ export function TeamDetailTabs({
   const [deletingEvent, setDeletingEvent] = useState<EventSummary | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [allEvents, setAllEvents] = useState<EventSummary[]>([]);
+  const [allEventsLoading, setAllEventsLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!showAllEvents) { setAllEvents([]); return; }
+    let cancelled = false;
+    async function fetchAll() {
+      setAllEventsLoading(true);
+      try {
+        const now = new Date().toISOString();
+        const res = await fetch(`/api/schedules?startDate=${now}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setAllEvents(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data.map((e: any) => ({
+            id: e.id,
+            title: e.title,
+            type: e.type,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            recurrenceGroupId: e.recurrenceGroupId,
+            facility: e.subFacility ? `${e.subFacility.facility.name} - ${e.subFacility.name}` : e.customLocation ?? "TBD",
+            subFacilityId: e.subFacilityId,
+            seasonId: e.seasonId,
+            notes: e.notes,
+            isRecurring: e.isRecurring,
+            recurrenceRule: e.recurrenceRule,
+            gameVenue: e.gameVenue,
+            teamName: e.team?.name,
+            teamColor: e.team?.color,
+            conflicts: [],
+            gameJobs: (e.gameJobs ?? []).map((gj: any) => ({
+              id: gj.id,
+              name: gj.overrideName ?? gj.jobTemplate?.name ?? "Job",
+              slotsNeeded: gj.slotsNeeded,
+              filled: gj.assignments?.length ?? 0,
+              isPublic: gj.isPublic,
+              scope: gj.jobTemplate?.scope ?? "FACILITY",
+              volunteerNames: gj.assignments?.map((a: any) => a.name).filter(Boolean) ?? [],
+            })),
+          }))
+        );
+      } finally {
+        if (!cancelled) setAllEventsLoading(false);
+      }
+    }
+    fetchAll();
+    return () => { cancelled = true; };
+  }, [showAllEvents]);
+
+  const displayedEvents = showAllEvents
+    ? [...events, ...allEvents.filter((e) => e.id && !events.some((te) => te.id === e.id))].sort((a, b) => a.startTime.localeCompare(b.startTime))
+    : events;
 
   function handleEventSaved() {
     setEventFormOpen(false);
@@ -222,78 +278,154 @@ export function TeamDetailTabs({
     }
   }
 
+  const [activeTab, setActiveTab] = useState<string | number | null>("overview");
+  const [scheduleFilter, setScheduleFilter] = useState<"all" | "games" | "practices" | "jobs" | "open-jobs">("all");
+
+  const allFacilityJobs = events.flatMap((e) => e.gameJobs.filter((j) => j.scope === "FACILITY"));
+  const openJobs = allFacilityJobs.filter((j) => j.filled < j.slotsNeeded);
+
+  function goToSchedule(filter: "all" | "games" | "practices" | "jobs" | "open-jobs") {
+    setScheduleFilter(filter);
+    setActiveTab("schedule");
+  }
+
+  const tabs = [
+    { value: "overview", label: "Overview", icon: Info },
+    { value: "schedule", label: "Schedule", icon: Calendar },
+    { value: "staff", label: "Staff", icon: Users },
+    { value: "roster", label: "Roster", icon: Users },
+    ...(canManage ? [{ value: "settings", label: "Settings", icon: Settings }] : []),
+  ];
+
   return (
-    <Tabs defaultValue="overview">
-      <TabsList className="w-full sm:w-auto">
-        <TabsTrigger value="overview">
-          <Info className="h-3.5 w-3.5 mr-1.5" />
-          Overview
-        </TabsTrigger>
-        <TabsTrigger value="schedule">
-          <Calendar className="h-3.5 w-3.5 mr-1.5" />
-          Schedule
-        </TabsTrigger>
-        <TabsTrigger value="signups">
-          <Users className="h-3.5 w-3.5 mr-1.5" />
-          Signups
-        </TabsTrigger>
-        <TabsTrigger value="staff">
-          <Briefcase className="h-3.5 w-3.5 mr-1.5" />
-          Staff
-        </TabsTrigger>
-        <TabsTrigger value="roster">
-          <Users className="h-3.5 w-3.5 mr-1.5" />
-          Roster
-        </TabsTrigger>
-        {canManage && (
-          <TabsTrigger value="settings">
-            <Settings className="h-3.5 w-3.5 mr-1.5" />
-            Settings
-          </TabsTrigger>
-        )}
-      </TabsList>
+    <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== "schedule") setScheduleFilter("all"); }} className="flex-1 min-h-0 flex flex-col md:block">
+      <div className="flex shrink-0 border-b border-border/50 overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0 scrollbar-none">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.value;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => { setActiveTab(tab.value); if (tab.value !== "schedule") setScheduleFilter("all"); }}
+              className={cn(
+                "flex items-center gap-1 md:gap-1.5 px-3 md:px-4 py-2.5 text-xs md:text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0",
+                active
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <tab.icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       <TabsContent value="overview">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-          <StatCard label="Upcoming Games" value={games.length} />
-          <StatCard label="Upcoming Practices" value={practices.length} />
-          <StatCard
-            label="Slots Filled"
-            value={`${signupStats.filledSlots}/${signupStats.totalSlots}`}
-          />
-          <StatCard
-            label="Active Templates"
-            value={jobTemplates.filter((j) => j.active).length + teamSpecificTemplates.filter((j) => j.active).length}
-          />
+        <div className="grid grid-cols-2 gap-2 md:gap-3 mb-4 md:mb-6">
+          <button type="button" className="text-left" onClick={() => goToSchedule("games")}>
+            <StatCard label="Upcoming Games" value={games.length} clickable />
+          </button>
+          <button type="button" className="text-left" onClick={() => goToSchedule("practices")}>
+            <StatCard label="Practices" value={practices.length} clickable />
+          </button>
+          <button type="button" className="text-left" onClick={() => goToSchedule("jobs")}>
+            <StatCard label="Facility Jobs" value={allFacilityJobs.length} clickable />
+          </button>
+          <button type="button" className="text-left" onClick={() => goToSchedule("open-jobs")}>
+            <StatCard label="Open Jobs" value={openJobs.length} clickable highlight={openJobs.length > 0} />
+          </button>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 mb-6">
-          <Card className="rounded-2xl border-border/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Seasons</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {team.seasons.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Not enrolled in any season.</p>
-              ) : (
-                team.seasons.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{s.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(s.startDate), "MMM d")} - {format(new Date(s.endDate), "MMM d, yyyy")}
-                    </p>
+        {/* Quick upcoming events preview */}
+        {events.length > 0 ? (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Next Up</h3>
+            {events.slice(0, 3).map((evt) => (
+              <button
+                key={evt.id}
+                type="button"
+                className="w-full text-left rounded-xl border border-border/50 p-3 hover:bg-accent/30 transition-colors"
+                onClick={() => setActiveTab("schedule")}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium truncate">{evt.title}</span>
+                      <Badge variant={evt.type === "GAME" ? "default" : "secondary"} className="rounded text-[10px] shrink-0">
+                        {evt.type === "GAME" ? "Game" : "Practice"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {format(parseISO(evt.startTime), "EEE, MMM d · h:mm a")}
+                      </span>
+                      <span className="flex items-center gap-1 truncate">
+                        <MapPin className="h-3 w-3 shrink-0" />
+                        {evt.facility}
+                      </span>
+                    </div>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                </div>
+              </button>
+            ))}
+            {events.length > 3 && (
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline font-medium"
+                onClick={() => setActiveTab("schedule")}
+              >
+                View all {events.length} events →
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground py-4">No upcoming events.</p>
+        )}
       </TabsContent>
 
       <TabsContent value="schedule">
-        <div className="space-y-4">
-          {scheduling.canSchedule && (
-            <div className="flex justify-end">
+        <div className="space-y-3 md:space-y-4">
+          {/* Filter chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none -mx-1 px-1">
+            {([
+              { key: "all", label: "All" },
+              { key: "games", label: "Games" },
+              { key: "practices", label: "Practices" },
+              { key: "jobs", label: "Jobs" },
+              { key: "open-jobs", label: "Open Jobs" },
+            ] as const).map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setScheduleFilter(f.key)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0",
+                  scheduleFilter === f.key
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="show-all-events"
+                checked={showAllEvents}
+                onCheckedChange={setShowAllEvents}
+                className="scale-90"
+              />
+              <Label htmlFor="show-all-events" className="text-xs font-normal text-muted-foreground cursor-pointer">
+                Show all events
+              </Label>
+              {allEventsLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </div>
+            {scheduling.canSchedule && (
               <Button
                 size="sm"
                 className="rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-all"
@@ -302,32 +434,48 @@ export function TeamDetailTabs({
                 <Plus className="mr-1.5 h-4 w-4" />
                 Schedule Event
               </Button>
-            </div>
-          )}
+            )}
+          </div>
 
-          {events.length === 0 ? (
-            <Card className="rounded-2xl border-border/50">
-              <CardContent className="flex flex-col items-center justify-center py-16">
+          {(() => {
+            let filtered = displayedEvents;
+            if (scheduleFilter === "games") filtered = filtered.filter((e) => e.type === "GAME");
+            else if (scheduleFilter === "practices") filtered = filtered.filter((e) => e.type === "PRACTICE");
+            else if (scheduleFilter === "jobs") filtered = filtered.filter((e) => e.gameJobs.some((j) => j.scope === "FACILITY"));
+            else if (scheduleFilter === "open-jobs") filtered = filtered.filter((e) => e.gameJobs.some((j) => j.scope === "FACILITY" && j.filled < j.slotsNeeded));
+
+            return filtered.length === 0 ? (
+            <Card className="rounded-xl border-border/50">
+              <CardContent className="flex flex-col items-center justify-center py-12">
                 <Calendar className="h-8 w-8 text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground">No upcoming events for this team.</p>
-                {scheduling.canSchedule && (
-                  <Button variant="outline" size="sm" className="mt-4 rounded-xl" onClick={openCreate}>
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    Schedule your first event
-                  </Button>
+                <p className="text-sm text-muted-foreground">
+                  {scheduleFilter === "all" ? "No upcoming events for this team." :
+                   scheduleFilter === "games" ? "No upcoming games." :
+                   scheduleFilter === "practices" ? "No upcoming practices." :
+                   scheduleFilter === "jobs" ? "No events with facility jobs." :
+                   "No open jobs right now."}
+                </p>
+                {scheduleFilter !== "all" && (
+                  <button type="button" className="text-xs text-primary hover:underline font-medium mt-2" onClick={() => setScheduleFilter("all")}>
+                    Show all events
+                  </button>
                 )}
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">
-              {events.map((evt) => {
+              {filtered.map((evt) => {
+                const isOtherTeam = showAllEvents && !events.some((e) => e.id === evt.id);
                 const facilityJobs = evt.gameJobs.filter((j) => j.scope === "FACILITY");
                 const isExpanded = expandedEventId === evt.id;
                 const totalFilled = facilityJobs.reduce((s, j) => s + j.filled, 0);
                 const totalSlots = facilityJobs.reduce((s, j) => s + j.slotsNeeded, 0);
+                const barColor = isOtherTeam
+                  ? ((evt as any).teamColor ?? "var(--muted)")
+                  : (evt.type === "GAME" ? team.color : "var(--muted)");
                 return (
-                  <Card key={evt.id} className="rounded-2xl border-border/50 overflow-hidden">
-                    <div className="h-0.5" style={{ backgroundColor: evt.type === "GAME" ? team.color : "var(--muted)" }} />
+                  <Card key={evt.id} className={cn("rounded-2xl border-border/50 overflow-hidden", isOtherTeam && "opacity-70")}>
+                    <div className="h-0.5" style={{ backgroundColor: barColor }} />
                     <CardContent className="py-0">
                       <button
                         type="button"
@@ -340,8 +488,13 @@ export function TeamDetailTabs({
                               <h3 className="text-sm font-semibold truncate">{evt.title}</h3>
                               <span className="text-xs text-muted-foreground">-</span>
                               <Badge variant={evt.type === "GAME" ? "default" : "secondary"} className="rounded-lg text-[10px] shrink-0">
-                                {evt.type === "GAME" ? "Game" : evt.type === "PRACTICE" ? "Practice" : "Other"}
+                                {evt.type === "GAME" ? "Game" : evt.type === "PRACTICE" ? "Practice" : evt.type === "CLUB_EVENT" ? "Club Event" : "Other"}
                               </Badge>
+                              {isOtherTeam && (evt as any).teamName && (
+                                <Badge variant="outline" className="rounded-lg text-[10px] shrink-0" style={{ borderColor: (evt as any).teamColor }}>
+                                  {(evt as any).teamName}
+                                </Badge>
+                              )}
                               {evt.recurrenceGroupId && <Badge variant="outline" className="rounded-lg text-[10px] shrink-0">Recurring</Badge>}
                             </div>
                             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
@@ -453,7 +606,8 @@ export function TeamDetailTabs({
                 );
               })}
             </div>
-          )}
+          );
+          })()}
         </div>
 
         <EventForm
@@ -500,64 +654,6 @@ export function TeamDetailTabs({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </TabsContent>
-
-      <TabsContent value="signups">
-        <div className="grid gap-4 sm:grid-cols-2 mb-6">
-          <StatCard label="Total Slots" value={signupStats.totalSlots} />
-          <StatCard label="Filled" value={signupStats.filledSlots} />
-        </div>
-
-        {events.flatMap((e) => e.gameJobs.filter((j) => j.scope === "FACILITY")).length === 0 ? (
-          <Card className="rounded-2xl border-border/50">
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <Users className="h-8 w-8 text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">No signup data for upcoming events.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {events.filter((e) => e.gameJobs.some((j) => j.scope === "FACILITY")).map((evt) => {
-              const facilityJobs = evt.gameJobs.filter((j) => j.scope === "FACILITY");
-              return (
-              <Card key={evt.id} className="rounded-2xl border-border/50">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold">{evt.title}</p>
-                    <p className="text-xs text-muted-foreground">{format(parseISO(evt.startTime), "EEE, MMM d")}</p>
-                  </div>
-                  {facilityJobs.map((gj) => {
-                    const openSlots = gj.slotsNeeded - gj.filled;
-                    return (
-                      <div key={gj.id} className="mb-3 last:mb-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm">{gj.name}</span>
-                          <span className="text-xs text-muted-foreground">{gj.filled}/{gj.slotsNeeded}</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-1.5">
-                          <div
-                            className="h-1.5 rounded-full transition-all"
-                            style={{
-                              width: `${gj.slotsNeeded > 0 ? (gj.filled / gj.slotsNeeded) * 100 : 0}%`,
-                              backgroundColor: openSlots === 0 ? "var(--color-emerald-500, #10b981)" : team.color,
-                            }}
-                          />
-                        </div>
-                        {gj.volunteerNames.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {gj.volunteerNames.map((vn, i) => (
-                              <span key={i} className="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground">{vn}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            );})}
-          </div>
-        )}
       </TabsContent>
 
       <TabsContent value="staff">
@@ -1001,6 +1097,7 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
   const [name, setName] = useState(team.name);
   const [icon, setIcon] = useState(team.icon || "");
   const [color, setColor] = useState(team.color);
+  const [active, setActive] = useState(team.active);
   const [headCoachId, setHeadCoachId] = useState(team.headCoach?.id || "");
   const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -1029,6 +1126,7 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
     name !== team.name ||
     icon !== (team.icon || "") ||
     color !== team.color ||
+    active !== team.active ||
     headCoachId !== (team.headCoach?.id || "");
 
   async function handleSave() {
@@ -1045,6 +1143,7 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
           name: name.trim(),
           icon: icon || null,
           color,
+          active,
           headCoachId: headCoachId || null,
         }),
       });
@@ -1173,6 +1272,25 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
               </SelectContent>
             </Select>
           </div>
+
+          {/* Active/Inactive toggle */}
+          {canManage && (
+            <div className="flex items-center justify-between rounded-xl border border-border/50 p-3">
+              <div>
+                <Label htmlFor="team-active" className="text-sm font-medium">
+                  Team Active
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {active ? "Team is visible and can be scheduled" : "Team is hidden from lists and scheduling"}
+                </p>
+              </div>
+              <Switch
+                id="team-active"
+                checked={active}
+                onCheckedChange={setActive}
+              />
+            </div>
+          )}
 
           {/* Save button */}
           {canManage && (
@@ -1437,12 +1555,16 @@ function TeamTemplateRow({ template }: { template: TeamSpecificTemplate }) {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
+function StatCard({ label, value, clickable, highlight }: { label: string; value: number | string; clickable?: boolean; highlight?: boolean }) {
   return (
-    <Card className="rounded-2xl border-border/50">
-      <CardContent className="py-4">
-        <p className="text-xs text-muted-foreground font-medium">{label}</p>
-        <p className="text-2xl font-bold mt-1">{value}</p>
+    <Card className={cn(
+      "rounded-xl md:rounded-2xl border-border/50",
+      clickable && "hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer",
+      highlight && "border-primary/30 bg-primary/5"
+    )}>
+      <CardContent className="py-3 md:py-4">
+        <p className="text-[11px] md:text-xs text-muted-foreground font-medium">{label}</p>
+        <p className={cn("text-xl md:text-2xl font-bold mt-0.5 md:mt-1", highlight && "text-primary")}>{value}</p>
       </CardContent>
     </Card>
   );

@@ -15,6 +15,7 @@ interface HelpWantedJobCardProps {
     teamColor: string;
     facilityName: string;
     subFacilityName: string;
+    date: string;
     time: string;
     slotsNeeded: number;
     assignmentCount: number;
@@ -30,38 +31,25 @@ export function HelpWantedJobCard({ job }: HelpWantedJobCardProps) {
   const fillPct = Math.min((assignmentCount / job.slotsNeeded) * 100, 100);
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card/50 p-4 transition-all duration-200 hover:border-border">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-lg md:rounded-xl border border-border/50 bg-card/50 p-3 md:p-4 transition-all duration-200 hover:border-border">
+      <div className="flex items-start justify-between gap-2 md:gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm">{job.templateName}</span>
+          <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+            <span className="font-semibold text-xs md:text-sm">{job.templateName}</span>
             <Badge
               variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded-lg text-[11px]"
+              className="rounded text-[10px] md:text-[11px] px-1.5 py-0"
             >
-              <Users className="mr-1 h-3 w-3" />
               {spotsLeft > 0
-                ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`
+                ? `${spotsLeft} left`
                 : "Full"}
             </Badge>
-            <Badge variant="outline" className="rounded-lg text-[11px]">
+            <Badge variant="outline" className="rounded text-[10px] md:text-[11px] px-1.5 py-0">
               {job.hoursPerGame}h
             </Badge>
           </div>
-          <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className="h-2.5 w-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: job.teamColor }}
-            />
-            <span className="truncate">
-              {job.teamName} &middot; {job.eventTitle}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {job.facilityName} &ndash; {job.subFacilityName} &middot; {job.time}
-          </p>
-          <div className="mt-2 flex items-center gap-2">
-            <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+          <div className="mt-1 flex items-center gap-1.5 md:gap-2">
+            <div className="h-1 md:h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
               <div
                 className={cn(
                   "h-full rounded-full transition-all duration-500",
@@ -74,13 +62,13 @@ export function HelpWantedJobCard({ job }: HelpWantedJobCardProps) {
                 style={{ width: `${fillPct}%` }}
               />
             </div>
-            <span className="text-[11px] text-muted-foreground font-medium shrink-0">
+            <span className="text-[10px] md:text-[11px] text-muted-foreground font-medium shrink-0">
               {assignmentCount}/{job.slotsNeeded}
             </span>
           </div>
           {names.length > 0 && (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Signed up: {names.join(", ")}
+            <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground truncate">
+              {names.join(", ")}
             </p>
           )}
         </div>
@@ -89,6 +77,9 @@ export function HelpWantedJobCard({ job }: HelpWantedJobCardProps) {
             <PublicJobSignup
               jobId={job.id}
               jobName={job.templateName}
+              eventTitle={job.eventTitle}
+              eventDate={job.date}
+              eventTime={job.time}
               onSuccess={(name) => {
                 setAssignmentCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

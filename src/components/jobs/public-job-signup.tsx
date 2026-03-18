@@ -5,22 +5,44 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, ChevronDown, Loader2 } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { useVolunteerIdentity } from "@/components/providers/volunteer-identity";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 
 interface PublicJobSignupProps {
   jobId: string;
   jobName: string;
+  eventTitle?: string;
+  eventDate?: string;
+  eventTime?: string;
   onSuccess: (name?: string) => void;
 }
 
 export function PublicJobSignup({
   jobId,
   jobName,
+  eventTitle,
+  eventDate,
+  eventTime,
   onSuccess,
 }: PublicJobSignupProps) {
   const { identity, setIdentity } = useVolunteerIdentity();
-  const [showForm, setShowForm] = useState(false);
+  const isMobile = useIsMobile();
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -72,6 +94,7 @@ export function PublicJobSignup({
       }
 
       setSuccess(true);
+      setOpen(false);
       toast.success("You're signed up! Thank you for helping out.");
       onSuccess(name.trim());
     } catch (err) {
@@ -83,108 +106,156 @@ export function PublicJobSignup({
 
   if (success) {
     return (
-      <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-400">
-        <CheckCircle2 className="h-5 w-5 shrink-0" />
-        <span>Signed up! Check your email for confirmation.</span>
+      <div className="flex items-center gap-1.5 text-emerald-500">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <span className="text-xs font-medium">Signed up!</span>
       </div>
     );
   }
 
-  if (!showForm) {
-    return (
-      <Button
-        className="shrink-0 rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-transform h-11 px-5 text-sm"
-        onClick={() => setShowForm(true)}
-      >
-        Sign Up
-        <ChevronDown className="ml-1 h-3.5 w-3.5" />
-      </Button>
-    );
-  }
+  const formContent = (
+    <form onSubmit={handleSubmit} className="grid gap-3 px-1">
+      <div className="grid gap-1.5">
+        <Label htmlFor={`job-name-${jobId}`} className="text-sm font-medium">
+          Your Name
+        </Label>
+        <Input
+          id={`job-name-${jobId}`}
+          placeholder="Jane Smith"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="h-11 rounded-xl text-sm"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`job-email-${jobId}`} className="text-sm font-medium">
+          Email
+        </Label>
+        <Input
+          id={`job-email-${jobId}`}
+          type="email"
+          placeholder="jane@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="h-11 rounded-xl text-sm"
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`job-phone-${jobId}`} className="text-sm font-medium">
+          Phone <span className="text-muted-foreground font-normal">(optional)</span>
+        </Label>
+        <Input
+          id={`job-phone-${jobId}`}
+          type="tel"
+          placeholder="(920) 555-1234"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          className="h-11 rounded-xl text-sm"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Get SMS reminders about your shift. <a href="/sms-consent" className="underline">SMS Consent</a>
+        </p>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor={`job-player-${jobId}`} className="text-sm font-medium">
+          Player Name
+        </Label>
+        <Input
+          id={`job-player-${jobId}`}
+          placeholder="Who are you volunteering for?"
+          value={playerName}
+          onChange={(e) => setPlayerName(e.target.value)}
+          className="h-11 rounded-xl text-sm"
+        />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 rounded-xl flex-1"
+          onClick={() => setOpen(false)}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={loading}
+          className="h-11 rounded-xl flex-1 font-semibold shadow-md shadow-primary/15 active:scale-[0.98] transition-all"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              Signing up...
+            </>
+          ) : (
+            "Sign Up"
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+
+  const jobInfoBanner = (eventDate || eventTime) ? (
+    <div className="rounded-xl bg-muted/50 border border-border/50 p-3 space-y-1">
+      <p className="font-semibold text-sm">{jobName}</p>
+      {eventTitle && <p className="text-xs text-muted-foreground">{eventTitle}</p>}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        {eventDate && (
+          <span className="flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            {eventDate}
+          </span>
+        )}
+        {eventTime && (
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {eventTime}
+          </span>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <div className="border-t border-border/50 pt-4 mt-4">
-      <form onSubmit={handleSubmit} className="grid gap-3">
-        <div className="grid gap-1.5">
-          <Label htmlFor={`job-name-${jobId}`} className="text-sm font-medium">
-            Your Name
-          </Label>
-          <Input
-            id={`job-name-${jobId}`}
-            placeholder="Jane Smith"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="h-12 rounded-xl text-base"
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`job-email-${jobId}`} className="text-sm font-medium">
-            Email
-          </Label>
-          <Input
-            id={`job-email-${jobId}`}
-            type="email"
-            placeholder="jane@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="h-12 rounded-xl text-base"
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`job-phone-${jobId}`} className="text-sm font-medium">
-            Phone <span className="text-muted-foreground font-normal">(optional)</span>
-          </Label>
-          <Input
-            id={`job-phone-${jobId}`}
-            type="tel"
-            placeholder="(920) 555-1234"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="h-12 rounded-xl text-base"
-          />
-          <p className="text-xs text-muted-foreground">
-            Get SMS reminders about your shift. <a href="/sms-consent" className="underline">SMS Consent</a>
-          </p>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`job-player-${jobId}`} className="text-sm font-medium">
-            Player Name
-          </Label>
-          <Input
-            id={`job-player-${jobId}`}
-            placeholder="Who are you volunteering for?"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            className="h-12 rounded-xl text-base"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-12 rounded-xl flex-1"
-            onClick={() => setShowForm(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={loading}
-            className="h-12 rounded-xl flex-1 text-base font-semibold shadow-md shadow-primary/15 active:scale-[0.98] transition-all"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                Signing up...
-              </>
-            ) : (
-              "Confirm Sign Up"
-            )}
-          </Button>
-        </div>
-      </form>
-    </div>
+    <>
+      <Button
+        className="shrink-0 rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-transform h-9 md:h-10 px-4 md:px-5 text-xs md:text-sm"
+        onClick={() => setOpen(true)}
+      >
+        Sign Up
+      </Button>
+
+      {isMobile ? (
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto" showCloseButton>
+            <SheetHeader>
+              <SheetTitle>Volunteer Sign Up</SheetTitle>
+              <SheetDescription className="sr-only">Sign up form</SheetDescription>
+            </SheetHeader>
+            <div className="pb-6 pt-2 space-y-3 px-1">
+              {jobInfoBanner}
+              {formContent}
+            </div>
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Volunteer Sign Up</DialogTitle>
+              <DialogDescription>
+                Fill in your details to volunteer for this job.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {jobInfoBanner}
+              {formContent}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }

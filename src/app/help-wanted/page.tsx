@@ -4,10 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { Briefcase } from "lucide-react";
 import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { HelpWantedBoard, type JobData, type FilterOption } from "./help-wanted-board";
 import { PublicFooter } from "@/components/public-footer";
 
 export default async function HelpWantedPage() {
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = !!session?.user;
+
   const org = await prisma.organization.findFirst({
     select: { teamJobsPublicSignup: true },
   });
@@ -100,22 +105,39 @@ export default async function HelpWantedPage() {
     a.name.localeCompare(b.name)
   );
 
+  if (isAuthenticated) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-6 px-3 md:px-8 md:py-8">
+        <h1 className="hidden md:block text-2xl font-bold tracking-tight">
+          Volunteer Signup
+        </h1>
+        <div className="flex-1 min-h-0 overflow-y-auto md:overflow-visible">
+          <HelpWantedBoard
+            jobs={jobData}
+            teams={teams}
+            facilities={facilities}
+            compact
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh bg-background">
       <div className="bg-gradient-to-b from-primary/10 via-background to-background">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:py-16">
-          <div className="mb-6 sm:mb-8 text-center">
-            <div className="mx-auto mb-4 sm:mb-5 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg shadow-primary/25">
-              <Briefcase className="h-7 w-7" />
+        <div className="mx-auto max-w-5xl px-3 sm:px-4 py-4 sm:py-16">
+          <div className="mb-4 sm:mb-8 text-center">
+            <div className="mx-auto mb-3 sm:mb-5 flex h-10 w-10 sm:h-16 sm:w-16 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg shadow-primary/25">
+              <Briefcase className="h-5 w-5 sm:h-7 sm:w-7" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+            <h1 className="text-2xl sm:text-4xl font-bold tracking-tight">
               Volunteer Signup
             </h1>
-            <p className="mt-3 text-muted-foreground max-w-md mx-auto">
-              We need help on game days! Browse upcoming jobs and sign up for a
-              shift below.
+            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-muted-foreground max-w-md mx-auto">
+              Browse upcoming jobs and sign up for a shift below.
             </p>
-            <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+            <div className="mt-3 sm:mt-4 flex items-center justify-center gap-3 sm:gap-4 text-xs sm:text-sm">
               <Link
                 href="/schedule"
                 className="text-primary hover:underline font-medium"
@@ -127,7 +149,7 @@ export default async function HelpWantedPage() {
                 href="/my-signups"
                 className="text-primary hover:underline font-medium"
               >
-                Manage your signups &rarr;
+                My signups &rarr;
               </Link>
             </div>
           </div>

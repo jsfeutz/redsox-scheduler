@@ -81,12 +81,14 @@ interface HelpWantedBoardProps {
   jobs: JobData[];
   teams: FilterOption[];
   facilities: FilterOption[];
+  compact?: boolean;
 }
 
 export function HelpWantedBoard({
   jobs,
   teams,
   facilities,
+  compact = false,
 }: HelpWantedBoardProps) {
   const searchParams = useSearchParams();
   const highlightJobId = searchParams.get("job");
@@ -99,7 +101,7 @@ export function HelpWantedBoard({
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("table");
+  const [viewMode, setViewMode] = useState<"cards" | "table">(compact ? "cards" : "table");
   const [page, setPage] = useState(() => {
     if (highlightJobId) {
       const idx = jobs.findIndex((j) => j.id === highlightJobId);
@@ -188,11 +190,11 @@ export function HelpWantedBoard({
     selectedTeams.size + selectedFacilities.size + selectedJobs.size + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   const filterContent = (
-    <div className="space-y-4">
-      <div className="grid gap-2">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team</label>
+    <div className="space-y-3">
+      <div className="grid gap-1">
+        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Team</label>
         <Select value={selectedTeams.size === 1 ? [...selectedTeams][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedTeams(new Set<string>()); else setSelectedTeams(new Set<string>([v])); }}>
-          <SelectTrigger className="h-9 rounded-lg text-sm">
+          <SelectTrigger className="h-10 rounded-xl text-sm">
             <SelectValue placeholder="All Teams" />
           </SelectTrigger>
           <SelectContent>
@@ -209,10 +211,10 @@ export function HelpWantedBoard({
         </Select>
       </div>
 
-      <div className="grid gap-2">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Job Type</label>
+      <div className="grid gap-1">
+        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Job Type</label>
         <Select value={selectedJobs.size === 1 ? [...selectedJobs][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedJobs(new Set<string>()); else setSelectedJobs(new Set<string>([v])); }}>
-          <SelectTrigger className="h-9 rounded-lg text-sm">
+          <SelectTrigger className="h-10 rounded-xl text-sm">
             <SelectValue placeholder="All Jobs" />
           </SelectTrigger>
           <SelectContent>
@@ -224,10 +226,10 @@ export function HelpWantedBoard({
         </Select>
       </div>
 
-      <div className="grid gap-2">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Facility</label>
+      <div className="grid gap-1">
+        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Facility</label>
         <Select value={selectedFacilities.size === 1 ? [...selectedFacilities][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedFacilities(new Set<string>()); else setSelectedFacilities(new Set<string>([v])); }}>
-          <SelectTrigger className="h-9 rounded-lg text-sm">
+          <SelectTrigger className="h-10 rounded-xl text-sm">
             <SelectValue placeholder="All Facilities" />
           </SelectTrigger>
           <SelectContent>
@@ -239,19 +241,19 @@ export function HelpWantedBoard({
         </Select>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="grid gap-2">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">From</label>
-          <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v)} placeholder="Start" className="h-9 rounded-lg text-sm" />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">From</label>
+          <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v)} placeholder="Start" className="h-10 rounded-xl text-sm" />
         </div>
-        <div className="grid gap-2">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">To</label>
-          <DatePicker value={dateTo} onChange={(v) => setDateTo(v)} placeholder="End" className="h-9 rounded-lg text-sm" />
+        <div className="grid gap-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">To</label>
+          <DatePicker value={dateTo} onChange={(v) => setDateTo(v)} placeholder="End" className="h-10 rounded-xl text-sm" />
         </div>
       </div>
 
       {hasActiveFilters && (
-        <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-xs">
+        <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-xs mt-1">
           Clear all filters
         </Button>
       )}
@@ -259,16 +261,16 @@ export function HelpWantedBoard({
   );
 
   return (
-    <div className="space-y-4">
-      {/* Search row */}
+    <div className={cn("space-y-3 md:space-y-4", compact && "py-3 md:py-0")}>
+      {/* Search + filters row */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search jobs, teams, events..."
+            placeholder="Search jobs, teams..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-10 pl-10 rounded-xl text-sm"
+            className={cn("pl-10 rounded-xl text-sm", compact ? "h-9" : "h-10")}
           />
           {search && (
             <button
@@ -280,10 +282,9 @@ export function HelpWantedBoard({
           )}
         </div>
 
-        {/* Mobile: filter sheet trigger */}
         <Sheet>
           <SheetTrigger
-            render={<Button variant="outline" size="icon" className="sm:hidden h-10 w-10 rounded-xl relative shrink-0" />}
+            render={<Button variant="outline" size="icon" className={cn("sm:hidden rounded-xl relative shrink-0", compact ? "h-9 w-9" : "h-10 w-10")} />}
           >
             <SlidersHorizontal className="h-4 w-4" />
             {filterCount > 0 && (
@@ -306,7 +307,7 @@ export function HelpWantedBoard({
           <button
             onClick={() => setViewMode("cards")}
             className={cn(
-              "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
+              "flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-lg transition-colors",
               viewMode === "cards"
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -317,7 +318,7 @@ export function HelpWantedBoard({
           <button
             onClick={() => setViewMode("table")}
             className={cn(
-              "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
+              "flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-lg transition-colors",
               viewMode === "table"
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -395,15 +396,15 @@ export function HelpWantedBoard({
         </div>
       )}
 
-      {/* My Signups quick lookup */}
-      <MySignupsLookup />
+      {/* My Signups quick lookup - only for public (non-compact) mode */}
+      {!compact && <MySignupsLookup />}
 
       {/* Results */}
       {filteredJobs.length === 0 ? (
         <Card className="rounded-2xl border-border/50">
-          <CardContent className="flex flex-col items-center py-16">
-            <Calendar className="h-14 w-14 text-muted-foreground/30 mb-4" />
-            <p className="text-lg font-semibold">
+          <CardContent className={cn("flex flex-col items-center", compact ? "py-10" : "py-16")}>
+            <Calendar className={cn("text-muted-foreground/30 mb-4", compact ? "h-10 w-10" : "h-14 w-14")} />
+            <p className={cn("font-semibold", compact ? "text-base" : "text-lg")}>
               {hasActiveFilters ? "No jobs match your filters" : "No open jobs right now"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -425,14 +426,14 @@ export function HelpWantedBoard({
       ) : viewMode === "table" ? (
         <TableView jobs={paginatedJobs} highlightedId={highlightedId} highlightJobId={highlightJobId} highlightRef={highlightRef} />
       ) : (
-        <CardView jobsByDate={jobsByDate} />
+        <CardView jobsByDate={jobsByDate} compact={compact} />
       )}
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-sm text-muted-foreground">
-            Showing {(page - 1) * JOBS_PER_PAGE + 1}–
+        <div className="flex items-center justify-between pt-2 pb-2">
+          <p className="text-xs md:text-sm text-muted-foreground">
+            {(page - 1) * JOBS_PER_PAGE + 1}–
             {Math.min(page * JOBS_PER_PAGE, filteredJobs.length)} of{" "}
             {filteredJobs.length}
           </p>
@@ -440,30 +441,39 @@ export function HelpWantedBoard({
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-lg"
+              className="h-8 w-8 md:h-9 md:w-9 rounded-lg"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <Button
-                key={p}
-                variant={p === page ? "default" : "outline"}
-                size="icon"
-                className={cn(
-                  "h-9 w-9 rounded-lg text-sm",
-                  p === page && "bg-primary text-primary-foreground"
-                )}
-                onClick={() => setPage(p)}
-              >
-                {p}
-              </Button>
-            ))}
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter((p) => {
+                if (totalPages <= 5) return true;
+                return p === 1 || p === totalPages || Math.abs(p - page) <= 1;
+              })
+              .map((p, i, arr) => (
+                <span key={p} className="contents">
+                  {i > 0 && arr[i - 1] !== p - 1 && (
+                    <span className="text-xs text-muted-foreground px-0.5">...</span>
+                  )}
+                  <Button
+                    variant={p === page ? "default" : "outline"}
+                    size="icon"
+                    className={cn(
+                      "h-8 w-8 md:h-9 md:w-9 rounded-lg text-xs md:text-sm",
+                      p === page && "bg-primary text-primary-foreground"
+                    )}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                </span>
+              ))}
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9 rounded-lg"
+              className="h-8 w-8 md:h-9 md:w-9 rounded-lg"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
@@ -601,11 +611,13 @@ function MySignupsLookup() {
 
 function CardView({
   jobsByDate,
+  compact = false,
 }: {
   jobsByDate: Record<string, JobData[]>;
+  compact?: boolean;
 }) {
   return (
-    <div className="space-y-8">
+    <div className={cn("space-y-6", compact && "space-y-4")}>
       {Object.entries(jobsByDate).map(([dateKey, dateJobs]) => {
         const byEvent = dateJobs.reduce<Record<string, JobData[]>>(
           (acc, job) => {
@@ -618,33 +630,34 @@ function CardView({
 
         return (
           <section key={dateKey}>
-            <div className="mb-3 flex items-center gap-2 px-1">
-              <div className="h-2 w-2 rounded-full bg-primary" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                {format(parseISO(dateKey), "EEEE, MMMM d")}
+            <div className={cn("mb-2 md:mb-3 flex items-center gap-2 px-1", compact && "sticky top-0 bg-background/95 backdrop-blur-sm py-1 z-10")}>
+              <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
+              <h2 className="text-xs md:text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                {format(parseISO(dateKey), "EEE, MMM d")}
               </h2>
             </div>
 
-            <div className="space-y-4">
+            <div className={cn("space-y-3", compact && "space-y-2")}>
               {Object.entries(byEvent).map(([eventId, eventJobs]) => {
                 const first = eventJobs[0];
                 return (
                   <Card
                     key={eventId}
-                    className="rounded-2xl border-border/50 overflow-hidden"
+                    className={cn("rounded-xl md:rounded-2xl border-border/50 overflow-hidden")}
                   >
                     <div
                       className="h-1"
                       style={{ backgroundColor: first.teamColor }}
                     />
-                    <CardContent className="space-y-4 p-5">
+                    <CardContent className={cn("space-y-3 md:space-y-4", compact ? "p-3 md:p-5" : "p-5")}>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-lg font-bold">
+                          <h3 className={cn("font-bold", compact ? "text-sm md:text-lg" : "text-lg")}>
                             {first.eventTitle}
                           </h3>
                           <Badge
                             variant="outline"
+                            className="text-[10px] md:text-xs"
                             style={{
                               borderColor: first.teamColor,
                               color: first.teamColor,
@@ -653,23 +666,23 @@ function CardView({
                             {first.teamName}
                           </Badge>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1.5">
-                            <Clock className="h-3.5 w-3.5" />
-                            {format(parseISO(first.startTime), "h:mm a")}{" "}
-                            &ndash;{" "}
+                        <div className={cn("mt-1.5 md:mt-2 flex flex-wrap gap-x-3 md:gap-x-4 gap-y-1 text-xs md:text-sm text-muted-foreground")}>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 md:h-3.5 md:w-3.5" />
+                            {format(parseISO(first.startTime), "h:mm a")}
+                            {" – "}
                             {format(parseISO(first.endTime), "h:mm a")}
                           </span>
-                          <span className="flex items-center gap-1.5">
-                            <MapPin className="h-3.5 w-3.5" />
-                            {first.facilityName} &ndash;{" "}
-                            {first.subFacilityName}
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3 md:h-3.5 md:w-3.5" />
+                            {first.facilityName}
+                            {first.subFacilityName && ` – ${first.subFacilityName}`}
                           </span>
                         </div>
                       </div>
 
-                      <div className="space-y-3 border-t border-border/50 pt-4">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      <div className={cn("space-y-2 md:space-y-3 border-t border-border/50", compact ? "pt-2 md:pt-4" : "pt-4")}>
+                        <p className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Available Jobs
                         </p>
                         {eventJobs.map((job) => (
@@ -683,6 +696,7 @@ function CardView({
                               teamColor: job.teamColor,
                               facilityName: job.facilityName,
                               subFacilityName: job.subFacilityName,
+                              date: format(parseISO(job.startTime), "EEE, MMM d"),
                               time: `${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`,
                               slotsNeeded: job.slotsNeeded,
                               assignmentCount: job.assignmentCount,
@@ -815,6 +829,9 @@ function TableRow({ job, highlighted, highlightRef }: { job: JobData; highlighte
           <PublicJobSignup
             jobId={job.id}
             jobName={job.templateName}
+            eventTitle={job.eventTitle}
+            eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
+            eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
             onSuccess={(name) => {
               setCount((c) => c + 1);
               if (name) setNames((prev) => [...prev, name]);
@@ -837,47 +854,39 @@ function MobileTableRow({ job }: { job: JobData }) {
   const fillPct = Math.min((count / job.slotsNeeded) * 100, 100);
 
   return (
-    <div className="px-4 py-3.5 space-y-2">
-      <div className="flex items-start justify-between gap-3">
+    <div className="px-3 py-2.5 space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm">{job.templateName}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm truncate">{job.templateName}</span>
             <Badge
               variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded-lg text-[10px] px-1.5 py-0"
+              className="rounded text-[10px] px-1.5 py-0 shrink-0"
             >
               {spotsLeft > 0 ? `${spotsLeft} left` : "Full"}
             </Badge>
-            <Badge
-              variant="outline"
-              className="rounded-lg text-[10px] px-1.5 py-0"
-            >
-              {job.hoursPerGame}h
-            </Badge>
           </div>
-          <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground">
             <span
-              className="h-2 w-2 rounded-full shrink-0"
+              className="h-1.5 w-1.5 rounded-full shrink-0"
               style={{ backgroundColor: job.teamColor }}
             />
             <span className="truncate">{job.teamName}</span>
             <span>&middot;</span>
-            <span>{format(parseISO(job.startTime), "MMM d, h:mm a")}</span>
+            <span className="shrink-0">{format(parseISO(job.startTime), "MMM d, h:mm a")}</span>
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5 truncate">
+          <div className="text-[11px] text-muted-foreground truncate">
             {job.facilityName} &middot; {job.eventTitle}
           </div>
-          {names.length > 0 && (
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Signed up: {names.join(", ")}
-            </p>
-          )}
         </div>
         {spotsLeft > 0 && (
-          <div className="shrink-0">
+          <div className="shrink-0 pt-0.5">
             <PublicJobSignup
               jobId={job.id}
               jobName={job.templateName}
+              eventTitle={job.eventTitle}
+              eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
+              eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
               onSuccess={(name) => {
                 setCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

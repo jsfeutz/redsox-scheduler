@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
   MapPin,
   Users,
   UsersRound,
@@ -19,13 +18,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const navItems: { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
-  { href: "/dashboard/teams", label: "Teams", icon: Users },
+const navItems: { href: string; label: string; icon: typeof Calendar; adminOnly?: boolean }[] = [
   { href: "/dashboard/schedules", label: "Schedule", icon: Calendar },
-  { href: "/dashboard/volunteers", label: "Volunteers", icon: Heart },
-  { href: "/help-wanted", label: "Job Signup", icon: Megaphone },
+  { href: "/dashboard/volunteers", label: "Jobs", icon: Heart },
+  { href: "/dashboard/teams", label: "Teams", icon: Users },
+  { href: "/help-wanted", label: "Volunteer Signup", icon: Megaphone },
+  { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
@@ -61,8 +59,7 @@ export function SidebarNav() {
           return true;
         }).map((item) => {
           const active =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}

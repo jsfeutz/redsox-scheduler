@@ -9,11 +9,11 @@ export function MobileHeader() {
   return (
     <header className="fixed top-0 left-0 right-0 z-30 md:hidden bg-card/95 glass border-b border-border/50">
       <div
-        className="flex items-center justify-between px-4 h-14"
+        className="flex items-center justify-between px-3 h-12"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 text-white font-black text-[10px] shadow-md shadow-primary/20">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 text-white font-black text-[9px] shadow-md shadow-primary/20">
             RR
           </div>
           <span className="text-sm font-bold tracking-tight">

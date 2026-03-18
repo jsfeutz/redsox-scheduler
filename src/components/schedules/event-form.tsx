@@ -167,7 +167,9 @@ export function EventForm({
   const [selectedSubFacilityId, setSelectedSubFacilityId] = useState(
     event?.subFacilityId ?? ""
   );
-  const [selectedType, setSelectedType] = useState(event?.type ?? "GAME");
+  const isTeamContext = !!fixedTeamId;
+  const defaultType = isTeamContext ? (event?.type ?? "GAME") : (event?.type ?? "CLUB_EVENT");
+  const [selectedType, setSelectedType] = useState(defaultType);
   const [useCustomLocation, setUseCustomLocation] = useState(
     !!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId)
   );
@@ -196,7 +198,7 @@ export function EventForm({
     resolver: zodResolver(eventSchema),
     defaultValues: {
       title: event?.title ?? "",
-      type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? "GAME",
+      type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? defaultType,
       date: event
         ? format(parseISO(event.startTime), "yyyy-MM-dd")
         : defaultDateStr,
@@ -230,7 +232,7 @@ export function EventForm({
       const dayOfWeek = getDay(dateStr ? new Date(dateStr + "T12:00:00") : new Date());
       reset({
         title: event?.title ?? "",
-        type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? "GAME",
+        type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? defaultType,
         date: dateStr,
         startTime: event
           ? format(parseISO(event.startTime), "HH:mm")
@@ -255,7 +257,7 @@ export function EventForm({
       });
       setSelectedTeamId(fixedTeamId || event?.teamId || "");
       setSelectedSubFacilityId(event?.subFacilityId ?? "");
-      setSelectedType(event?.type ?? "GAME");
+      setSelectedType(event?.type ?? defaultType);
       setUseCustomLocation(!!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId));
       setGameVenue((event?.gameVenue as "HOME" | "AWAY") || "HOME");
       setAllDay(false);
@@ -452,14 +454,16 @@ export function EventForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="GAME">Game</SelectItem>
-                  <SelectItem value="PRACTICE">Practice</SelectItem>
-                  <SelectItem value="OTHER">Other</SelectItem>
-                  {isAdmin && (
-                    <SelectItem value="CLUB_EVENT">Club Event</SelectItem>
-                  )}
-                  {isAdmin && (
-                    <SelectItem value="BLACKOUT">Blackout Date</SelectItem>
+                  {isTeamContext ? (
+                    <>
+                      <SelectItem value="GAME">Game</SelectItem>
+                      <SelectItem value="PRACTICE">Practice</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      {isAdmin && <SelectItem value="CLUB_EVENT">Club Event</SelectItem>}
+                      {isAdmin && <SelectItem value="BLACKOUT">Blackout Date</SelectItem>}
+                    </>
                   )}
                 </SelectContent>
               </Select>
@@ -612,15 +616,21 @@ export function EventForm({
                       }}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select facility" />
+                        {(() => {
+                          for (const f of facilities) {
+                            const sf = f.subFacilities.find((s) => s.id === selectedSubFacilityId);
+                            if (sf) return <span>{f.name} &ndash; {sf.name}</span>;
+                          }
+                          return <span className="text-muted-foreground">Select facility</span>;
+                        })()}
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__" label="Select facility">Select facility</SelectItem>
+                        <SelectItem value="__none__">Select facility</SelectItem>
                         {facilities.map((f) => (
                           <SelectGroup key={f.id}>
                             <SelectLabel>{f.name}</SelectLabel>
                             {f.subFacilities.map((sf) => (
-                              <SelectItem key={sf.id} value={sf.id} label={`${f.name} – ${sf.name}`}>
+                              <SelectItem key={sf.id} value={sf.id}>
                                 {sf.name}
                               </SelectItem>
                             ))}
@@ -662,12 +672,22 @@ export function EventForm({
                       }}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a team" />
+                        {(() => {
+                          const team = teams.find((t) => t.id === selectedTeamId);
+                          return team ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: team.color }} />
+                              {team.name}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Select a team</span>
+                          );
+                        })()}
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__" label="Select a team">Select a team</SelectItem>
+                        <SelectItem value="__none__">Select a team</SelectItem>
                         {teams.map((t) => (
-                          <SelectItem key={t.id} value={t.id} label={t.name}>
+                          <SelectItem key={t.id} value={t.id}>
                             <span
                               className="inline-block h-2.5 w-2.5 rounded-full mr-1.5"
                               style={{ backgroundColor: t.color }}
@@ -744,14 +764,20 @@ export function EventForm({
                       }}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select a facility" />
+                        {(() => {
+                          for (const f of facilities) {
+                            const sf = f.subFacilities.find((s) => s.id === selectedSubFacilityId);
+                            if (sf) return <span>{f.name} &ndash; {sf.name}</span>;
+                          }
+                          return <span className="text-muted-foreground">Select a facility</span>;
+                        })()}
                       </SelectTrigger>
                       <SelectContent>
                         {facilities.map((f) => (
                           <SelectGroup key={f.id}>
                             <SelectLabel>{f.name}</SelectLabel>
                             {f.subFacilities.map((sf) => (
-                              <SelectItem key={sf.id} value={sf.id} label={`${f.name} – ${sf.name}`}>
+                              <SelectItem key={sf.id} value={sf.id}>
                                 {sf.name}
                               </SelectItem>
                             ))}

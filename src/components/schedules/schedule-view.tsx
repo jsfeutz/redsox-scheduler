@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   format,
   startOfMonth,
@@ -43,8 +44,10 @@ import {
   MapPin,
   Loader2,
   Ban,
+  Filter,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -60,6 +63,7 @@ import { toast } from "sonner";
 import { EventForm } from "./event-form";
 import { EventDetail } from "./event-detail";
 import { TimeSlotRequests, TimeSlotRequestsBadge } from "./time-slot-requests";
+
 
 interface Team {
   id: string;
@@ -165,14 +169,18 @@ export function ScheduleView({
   isAdmin = false,
   userTeams = [],
 }: ScheduleViewProps) {
+  const isMobile = useIsMobile();
+  const [viewInitialized, setViewInitialized] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">("month");
+  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">("agenda");
   const [filterTeamId, setFilterTeamId] = useState("");
   const [filterSubFacilityId, setFilterSubFacilityId] = useState("");
   const [events, setEvents] = useState<ScheduleEventData[]>([]);
   const [blackouts, setBlackouts] = useState<BlackoutData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
+  const [showAwayGames, setShowAwayGames] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createDate, setCreateDate] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] =
@@ -180,6 +188,20 @@ export function ScheduleView({
   const [editEvent, setEditEvent] = useState<ScheduleEventData | null>(null);
   const [showRequests, setShowRequests] = useState(false);
   const [selectedBlackout, setSelectedBlackout] = useState<BlackoutData | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!viewInitialized) {
+      setViewMode(isMobile ? "agenda" : "month");
+      setViewInitialized(true);
+    }
+  }, [isMobile, viewInitialized]);
+
+  const filteredEvents = showAwayGames
+    ? events
+    : events.filter((e) => e.gameVenue !== "AWAY");
+
+  const hasActiveFilters = !!filterTeamId || !!filterSubFacilityId || showAwayGames;
 
   const getDateRange = useCallback(() => {
     if (viewMode === "agenda") {
@@ -288,7 +310,7 @@ export function ScheduleView({
     : [];
 
   const getEventsForDay = (day: Date) =>
-    events.filter((e) => isSameDay(parseISO(e.startTime), day));
+    filteredEvents.filter((e) => isSameDay(parseISO(e.startTime), day));
 
   const getBlackoutsForDay = (day: Date) => {
     const dayStr = format(day, "yyyy-MM-dd");
@@ -315,18 +337,123 @@ export function ScheduleView({
   const dayHours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i);
 
   return (
-    <div className="space-y-4">
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-4 md:h-auto">
+      {/* ===== MOBILE TOOLBAR ===== */}
+      <div className="md:hidden flex flex-col gap-1.5 shrink-0 pb-2">
+        {/* Row 1: nav + date + actions */}
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={navigatePrev}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <button
+            className="text-sm font-semibold truncate flex-1 text-center active:opacity-70"
+            onClick={() => setCurrentDate(new Date())}
+          >
+            {headerLabel}
+          </button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={navigateNext}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <button
+            onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
+            className={cn(
+              "h-8 w-8 flex items-center justify-center rounded-md transition-colors relative",
+              mobileFiltersOpen ? "bg-primary/15 text-primary" : "text-muted-foreground"
+            )}
+          >
+            <Filter className="h-4 w-4" />
+            {hasActiveFilters && (
+              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary" />
+            )}
+          </button>
+          {canManage && (
+            <Button
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* Row 2: view mode tabs */}
+        <Tabs
+          value={viewMode}
+          onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "day" | "agenda"); }}
+          className="w-full"
+        >
+          <TabsList className="w-full grid grid-cols-4 h-8">
+            <TabsTrigger value="agenda" className="text-xs h-7 px-0">
+              <List className="h-3.5 w-3.5 mr-1" />Agenda
+            </TabsTrigger>
+            <TabsTrigger value="day" className="text-xs h-7 px-0">
+              <Clock className="h-3.5 w-3.5 mr-1" />Day
+            </TabsTrigger>
+            <TabsTrigger value="week" className="text-xs h-7 px-0">
+              <CalendarDays className="h-3.5 w-3.5 mr-1" />Week
+            </TabsTrigger>
+            <TabsTrigger value="month" className="text-xs h-7 px-0">
+              <CalendarIcon className="h-3.5 w-3.5 mr-1" />Month
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Collapsible filters */}
+        {mobileFiltersOpen && (
+          <div className="flex flex-col gap-2 p-2 rounded-lg border bg-card animate-in slide-in-from-top-2 fade-in duration-150">
+            <Select
+              value={filterTeamId || "__all__"}
+              onValueChange={(v) => setFilterTeamId(!v || v === "__all__" ? "" : v)}
+              items={{ __all__: "All Teams", ...Object.fromEntries(teams.map((t) => [t.id, t.headCoach ? `${t.name} - ${t.headCoach.name}` : t.name])) }}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="All Teams" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Teams</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ backgroundColor: t.color }} />
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filterSubFacilityId || "__all__"}
+              onValueChange={(v) => setFilterSubFacilityId(!v || v === "__all__" ? "" : v)}
+              items={{ __all__: "All Facilities", ...Object.fromEntries(facilities.flatMap((f) => f.subFacilities.map((sf) => [sf.id, `${f.name} – ${sf.name}`]))) }}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="All Facilities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Facilities</SelectItem>
+                {facilities.map((f) =>
+                  f.subFacilities.map((sf) => (
+                    <SelectItem key={sf.id} value={sf.id} label={`${f.name} – ${sf.name}`}>
+                      {f.name} – {sf.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1.5">
+              <Checkbox id="show-away-m" checked={showAwayGames} onCheckedChange={(c) => setShowAwayGames(!!c)} />
+              <Label htmlFor="show-away-m" className="text-xs text-muted-foreground cursor-pointer">Show away games</Label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== DESKTOP TOOLBAR ===== */}
+      <div className="hidden md:flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" onClick={navigatePrev}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCurrentDate(new Date())}
-          >
+          <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
             Today
           </Button>
           <Button variant="outline" size="icon" onClick={navigateNext}>
@@ -334,7 +461,7 @@ export function ScheduleView({
           </Button>
         </div>
 
-        <h2 className="text-base sm:text-lg font-semibold min-w-0 truncate">{headerLabel}</h2>
+        <h2 className="text-lg font-semibold min-w-0 truncate">{headerLabel}</h2>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
           <Select
@@ -349,10 +476,7 @@ export function ScheduleView({
               <SelectItem value="__all__">All Teams</SelectItem>
               {teams.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full mr-1.5"
-                    style={{ backgroundColor: t.color }}
-                  />
+                  <span className="inline-block h-2.5 w-2.5 rounded-full mr-1.5" style={{ backgroundColor: t.color }} />
                   {t.name}
                   {t.headCoach && <span className="text-muted-foreground"> - {t.headCoach.name}</span>}
                 </SelectItem>
@@ -362,9 +486,7 @@ export function ScheduleView({
 
           <Select
             value={filterSubFacilityId || "__all__"}
-            onValueChange={(v) =>
-              setFilterSubFacilityId(!v || v === "__all__" ? "" : v)
-            }
+            onValueChange={(v) => setFilterSubFacilityId(!v || v === "__all__" ? "" : v)}
             items={{ __all__: "All Facilities", ...Object.fromEntries(facilities.flatMap((f) => f.subFacilities.map((sf) => [sf.id, `${f.name} – ${sf.name}`]))) }}
           >
             <SelectTrigger>
@@ -388,33 +510,31 @@ export function ScheduleView({
           >
             <TabsList>
               <TabsTrigger value="month">
-                <CalendarIcon className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Month</span>
+                <CalendarIcon className="h-4 w-4 mr-1" />Month
               </TabsTrigger>
               <TabsTrigger value="week">
-                <CalendarDays className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Week</span>
+                <CalendarDays className="h-4 w-4 mr-1" />Week
               </TabsTrigger>
               <TabsTrigger value="day">
-                <Clock className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Day</span>
+                <Clock className="h-4 w-4 mr-1" />Day
               </TabsTrigger>
               <TabsTrigger value="agenda">
-                <List className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Agenda</span>
+                <List className="h-4 w-4 mr-1" />Agenda
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
+          <div className="flex items-center gap-1.5">
+            <Checkbox id="show-away-games" checked={showAwayGames} onCheckedChange={(checked) => setShowAwayGames(!!checked)} />
+            <Label htmlFor="show-away-games" className="text-xs font-normal text-muted-foreground whitespace-nowrap cursor-pointer">
+              Away games
+            </Label>
+          </div>
+
           <TimeSlotRequestsBadge onClick={() => setShowRequests(true)} />
 
           {canManage && (
-            <Button
-              onClick={() => {
-                setCreateDate(new Date());
-                setShowCreateForm(true);
-              }}
-            >
+            <Button onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}>
               <Plus className="mr-1 h-4 w-4" />
               New Event
             </Button>
@@ -422,305 +542,298 @@ export function ScheduleView({
         </div>
       </div>
 
-      {/* Month / Week grid */}
-      {(viewMode === "month" || viewMode === "week") && (
-        <div className="rounded-lg border bg-card overflow-hidden">
-          <div className="grid grid-cols-7 border-b bg-muted/50">
-            {WEEK_DAYS.map((day) => (
-              <div
-                key={day}
-                className="px-2 py-2.5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide"
-              >
-                {day}
-              </div>
-            ))}
+      {/* ===== SCROLLABLE CONTENT AREA ===== */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto md:overflow-visible min-h-0">
+        {/* Month / Week grid */}
+        {(viewMode === "month" || viewMode === "week") && (
+          <div className="rounded-lg border bg-card overflow-hidden">
+            <div className="grid grid-cols-7 border-b bg-muted/50">
+              {WEEK_DAYS.map((day) => (
+                <div
+                  key={day}
+                  className="px-1 md:px-2 py-1.5 md:py-2.5 text-center text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                >
+                  {isMobile ? day[0] : day}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {days.map((day, i) => {
+                const dayEvents = getEventsForDay(day);
+                const dayBlackouts = getBlackoutsForDay(day);
+                const inMonth = isSameMonth(day, currentDate);
+                const today = isToday(day);
+                const isBlackedOut = dayBlackouts.length > 0;
+                const maxVisible = isMobile ? 2 : viewMode === "month" ? 3 : 8;
+                const visible = dayEvents.slice(0, maxVisible);
+                const overflow = dayEvents.length - maxVisible;
+
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "relative border-b border-r p-0.5 md:p-1.5 transition-colors",
+                      viewMode === "month" ? "min-h-[60px] md:min-h-[110px]" : "min-h-[100px] md:min-h-[220px]",
+                      !inMonth && "bg-muted/20",
+                      today && "bg-primary/5 ring-1 ring-inset ring-primary/20",
+                      isBlackedOut && "bg-red-50 dark:bg-red-950/20",
+                      canManage && "cursor-pointer hover:bg-accent/30"
+                    )}
+                    onClick={() => handleDayClick(day)}
+                  >
+                    <div className="flex items-center justify-between px-0.5 mb-0.5">
+                      <span
+                        className={cn(
+                          "text-[10px] md:text-xs",
+                          !inMonth && "text-muted-foreground/40",
+                          inMonth && "text-muted-foreground",
+                          today &&
+                            "flex h-5 w-5 md:h-6 md:w-6 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold"
+                        )}
+                      >
+                        {format(day, "d")}
+                      </span>
+                      {isBlackedOut && (
+                        <Ban className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+                      )}
+                    </div>
+                    {isBlackedOut && !isMobile && (
+                      <div className="mb-0.5">
+                        {dayBlackouts.map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            className="w-full truncate rounded-md px-1.5 py-[2px] text-[10px] font-medium leading-tight bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800/50 mb-0.5 text-left hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors cursor-pointer"
+                            title={`Blackout - ${b.title} (${b.eventTypes === "ALL" ? "All events" : b.eventTypes})`}
+                            onClick={(e) => { e.stopPropagation(); setSelectedBlackout(b); }}
+                          >
+                            <Ban className="inline h-2.5 w-2.5 mr-0.5 -mt-0.5" />
+                            Blackout - {b.title}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-0.5">
+                      {visible.map((event) => {
+                        const bgColor = event.team?.color ?? "#6b7280";
+                        return (
+                          <button
+                            key={event.id}
+                            className="group/pill w-full truncate rounded px-1 md:px-1.5 py-[2px] md:py-[3px] text-left text-[9px] md:text-[11px] font-medium leading-tight text-white transition-all hover:opacity-90"
+                            style={{ backgroundColor: bgColor }}
+                            onClick={(e) => handleEventClick(event, e)}
+                          >
+                            <span className="opacity-75">
+                              {format(parseISO(event.startTime), "h:mma").toLowerCase()}
+                            </span>
+                            <span className="hidden md:inline">
+                              {" "}{event.team?.name ?? "Club"} - {getTypeLabel(event.type, event.gameVenue)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {overflow > 0 && (
+                        <p className="px-0.5 text-[9px] md:text-[10px] text-muted-foreground font-medium">
+                          +{overflow}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="grid grid-cols-7">
-            {days.map((day, i) => {
+        )}
+
+        {/* Day view */}
+        {viewMode === "day" && (
+          <div className="rounded-lg border bg-card overflow-hidden">
+            {getBlackoutsForDay(currentDate).length > 0 && (
+              <div className="px-3 py-1.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800/50 flex items-center gap-2 flex-wrap">
+                <Ban className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                {getBlackoutsForDay(currentDate).map((b) => (
+                  <Badge
+                    key={b.id}
+                    variant="destructive"
+                    className="text-[10px] cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => setSelectedBlackout(b)}
+                  >
+                    Blackout - {b.title}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <div className="relative" style={{ minHeight: `${(DAY_END_HOUR - DAY_START_HOUR) * 64}px` }}>
+              {dayHours.map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute left-0 right-0 border-b border-border/40"
+                  style={{ top: `${(hour - DAY_START_HOUR) * 64}px`, height: 64 }}
+                >
+                  <span className="absolute -top-2.5 left-1 md:left-2 text-[10px] md:text-[11px] text-muted-foreground bg-card px-0.5">
+                    {format(new Date(2000, 0, 1, hour), "h a")}
+                  </span>
+                </div>
+              ))}
+              <div className="ml-10 md:ml-16 mr-1 md:mr-2 relative">
+                {filteredEvents
+                  .filter((e) => isSameDay(parseISO(e.startTime), currentDate))
+                  .map((event) => {
+                    const start = parseISO(event.startTime);
+                    const end = parseISO(event.endTime);
+                    const startMin = start.getHours() * 60 + start.getMinutes();
+                    const durationMin = Math.max(differenceInMinutes(end, start), 30);
+                    const top = ((startMin - DAY_START_HOUR * 60) / 60) * 64;
+                    const height = (durationMin / 60) * 64;
+                    const typeLabel = getTypeLabel(event.type, event.gameVenue);
+                    const bgColor = event.team?.color ?? "#6b7280";
+                    const teamName = event.team?.name ?? "Club Event";
+
+                    return (
+                      <button
+                        key={event.id}
+                        className="absolute left-0 right-0 rounded-lg px-2 md:px-3 py-1 md:py-1.5 text-left text-white text-xs md:text-sm font-medium overflow-hidden hover:opacity-90 transition-opacity shadow-sm"
+                        style={{ top: Math.max(top, 0), height: Math.max(height, 28), backgroundColor: bgColor }}
+                        onClick={(e) => handleEventClick(event, e)}
+                      >
+                        <div className="truncate font-semibold text-[10px] md:text-xs">
+                          {format(start, "h:mm a")} – {format(end, "h:mm a")}
+                        </div>
+                        <div className="truncate text-[10px] md:text-xs opacity-90">
+                          {teamName} · {typeLabel}: {event.title}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Agenda view */}
+        {viewMode === "agenda" && (
+          <div className="rounded-lg md:border bg-card overflow-hidden divide-y">
+            {agendaDays.map((day) => {
               const dayEvents = getEventsForDay(day);
               const dayBlackouts = getBlackoutsForDay(day);
-              const inMonth = isSameMonth(day, currentDate);
+              if (dayEvents.length === 0 && dayBlackouts.length === 0) return null;
               const today = isToday(day);
-              const isBlackedOut = dayBlackouts.length > 0;
-              const maxVisible = viewMode === "month" ? 3 : 8;
-              const visible = dayEvents.slice(0, maxVisible);
-              const overflow = dayEvents.length - maxVisible;
-
               return (
-                <div
-                  key={i}
-                  className={cn(
-                    "relative border-b border-r p-1.5 transition-colors",
-                    viewMode === "month" ? "min-h-[110px]" : "min-h-[220px]",
-                    !inMonth && "bg-muted/20",
-                    today && "bg-primary/5 ring-1 ring-inset ring-primary/20",
-                    isBlackedOut && "bg-red-50 dark:bg-red-950/20",
-                    canManage && "cursor-pointer hover:bg-accent/30"
-                  )}
-                  onClick={() => handleDayClick(day)}
-                >
-                  <div className="flex items-center justify-between px-0.5 mb-1">
-                    <span
-                      className={cn(
-                        "text-xs",
-                        !inMonth && "text-muted-foreground/40",
-                        inMonth && "text-muted-foreground",
-                        today &&
-                          "flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold"
-                      )}
-                    >
-                      {format(day, "d")}
+                <div key={day.toISOString()}>
+                  <div className={cn(
+                    "px-3 md:px-4 py-1.5 md:py-2 bg-muted/50 flex items-center gap-2 sticky top-0 z-10",
+                    today && "bg-primary/10",
+                    dayBlackouts.length > 0 && "bg-red-50 dark:bg-red-950/20"
+                  )}>
+                    <span className={cn(
+                      "text-xs md:text-sm font-semibold",
+                      today && "text-primary"
+                    )}>
+                      {format(day, "EEE, MMM d")}
                     </span>
-                    {isBlackedOut && (
-                      <span className="flex items-center gap-0.5 text-[10px] font-medium text-red-600 dark:text-red-400" title={dayBlackouts.map(b => b.title).join(", ")}>
-                        <Ban className="h-3 w-3" />
-                      </span>
+                    {today && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Today</Badge>
                     )}
+                    {dayBlackouts.map((b) => (
+                      <Badge
+                        key={b.id}
+                        variant="destructive"
+                        className="text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setSelectedBlackout(b)}
+                      >
+                        <Ban className="h-2.5 w-2.5 mr-0.5" />
+                        {b.title}
+                      </Badge>
+                    ))}
                   </div>
-                  {isBlackedOut && (
-                    <div className="mb-0.5">
-                      {dayBlackouts.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          className="w-full truncate rounded-md px-1.5 py-[2px] text-[10px] font-medium leading-tight bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800/50 mb-0.5 text-left hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors cursor-pointer"
-                          title={`Blackout - ${b.title} (${b.eventTypes === "ALL" ? "All events" : b.eventTypes})`}
-                          onClick={(e) => { e.stopPropagation(); setSelectedBlackout(b); }}
-                        >
-                          <Ban className="inline h-2.5 w-2.5 mr-0.5 -mt-0.5" />
-                          Blackout - {b.title}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="space-y-0.5">
-                    {visible.map((event) => {
-                      const coachName = event.team?.headCoach?.name;
+                  <div className="divide-y divide-border/50">
+                    {dayEvents.map((event) => {
+                      const start = parseISO(event.startTime);
+                      const end = parseISO(event.endTime);
                       const typeLabel = getTypeLabel(event.type, event.gameVenue);
                       const bgColor = event.team?.color ?? "#6b7280";
                       const teamName = event.team?.name ?? "Club Event";
+                      const locationLabel = event.subFacility
+                        ? `${event.subFacility.facility.name} – ${event.subFacility.name}`
+                        : event.customLocation ?? "";
                       return (
                         <button
                           key={event.id}
-                          className="group/pill w-full truncate rounded-md px-1.5 py-[3px] text-left text-[11px] font-medium leading-tight text-white transition-all hover:opacity-90 hover:shadow-sm"
-                          style={{ backgroundColor: bgColor }}
+                          className="w-full px-3 md:px-4 py-2 md:py-2.5 text-left active:bg-accent/40 md:hover:bg-accent/30 transition-colors"
                           onClick={(e) => handleEventClick(event, e)}
-                          title={`${format(parseISO(event.startTime), "h:mm a")} – ${teamName}${coachName ? ` - ${coachName}` : ""} - ${typeLabel}: ${event.title}`}
                         >
-                          <span className="opacity-75">
-                            {format(parseISO(event.startTime), "h:mma").toLowerCase()}
-                          </span>{" "}
-                          {teamName}{coachName ? <span className="opacity-70"> - {coachName}</span> : null} - {typeLabel}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: bgColor }}
+                            />
+                            <span className="text-sm font-medium truncate flex-1">
+                              {event.title}
+                            </span>
+                            <Badge variant="secondary" className="text-[10px] shrink-0 px-1.5 py-0">
+                              {typeLabel}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 ml-[18px] text-[11px] md:text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3 shrink-0" />
+                              {format(start, "h:mm a")} – {format(end, "h:mm a")}
+                            </span>
+                            <span className="truncate">{teamName}</span>
+                            {locationLabel && (
+                              <span className="truncate hidden sm:flex items-center gap-1">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                {locationLabel}
+                              </span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
-                    {overflow > 0 && (
-                      <p className="px-1 text-[10px] text-muted-foreground font-medium">
-                        +{overflow} more
-                      </p>
-                    )}
                   </div>
                 </div>
               );
             })}
+            {!loading && agendaDays.every((d) => getEventsForDay(d).length === 0 && getBlackoutsForDay(d).length === 0) && (
+              <div className="py-12 text-center text-muted-foreground text-sm">
+                No events in this 2-week period.
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Day view */}
-      {viewMode === "day" && (
-        <div className="rounded-lg border bg-card overflow-hidden">
-          {getBlackoutsForDay(currentDate).length > 0 && (
-            <div className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800/50 flex items-center gap-2 flex-wrap">
-              <Ban className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
-              {getBlackoutsForDay(currentDate).map((b) => (
-                <Badge
-                  key={b.id}
-                  variant="destructive"
-                  className="text-xs cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => setSelectedBlackout(b)}
-                >
-                  Blackout - {b.title} ({b.eventTypes === "ALL" ? "All events" : b.eventTypes})
-                </Badge>
-              ))}
-            </div>
-          )}
-          <div className="relative" style={{ minHeight: `${(DAY_END_HOUR - DAY_START_HOUR) * 64}px` }}>
-            {dayHours.map((hour) => (
-              <div
-                key={hour}
-                className="absolute left-0 right-0 border-b border-border/40"
-                style={{ top: `${(hour - DAY_START_HOUR) * 64}px`, height: 64 }}
+        {/* Loading overlay */}
+        {loading && (
+          <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading...</span>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && events.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 md:py-16 text-center">
+            <CalendarDays className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground/40" />
+            <h3 className="mt-3 text-base md:text-lg font-medium">No events scheduled</h3>
+            <p className="mt-1 text-xs md:text-sm text-muted-foreground max-w-sm">
+              {canManage
+                ? "Tap + to schedule your first event."
+                : "No events found for the selected filters."}
+            </p>
+            {canManage && (
+              <Button
+                size="sm"
+                className="mt-3"
+                onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}
               >
-                <span className="absolute -top-2.5 left-2 text-[11px] text-muted-foreground bg-card px-1">
-                  {format(new Date(2000, 0, 1, hour), "h a")}
-                </span>
-              </div>
-            ))}
-            <div className="ml-16 mr-2 relative">
-              {events
-                .filter((e) => isSameDay(parseISO(e.startTime), currentDate))
-                .map((event) => {
-                  const start = parseISO(event.startTime);
-                  const end = parseISO(event.endTime);
-                  const startMin = start.getHours() * 60 + start.getMinutes();
-                  const durationMin = Math.max(differenceInMinutes(end, start), 30);
-                  const top = ((startMin - DAY_START_HOUR * 60) / 60) * 64;
-                  const height = (durationMin / 60) * 64;
-                  const coachName = event.team?.headCoach?.name;
-                  const typeLabel = getTypeLabel(event.type, event.gameVenue);
-                  const bgColor = event.team?.color ?? "#6b7280";
-                  const teamName = event.team?.name ?? "Club Event";
-
-                  return (
-                    <button
-                      key={event.id}
-                      className="absolute left-0 right-0 rounded-lg px-3 py-1.5 text-left text-white text-sm font-medium overflow-hidden hover:opacity-90 transition-opacity shadow-sm"
-                      style={{ top: Math.max(top, 0), height: Math.max(height, 28), backgroundColor: bgColor }}
-                      onClick={(e) => handleEventClick(event, e)}
-                    >
-                      <div className="truncate font-semibold text-xs">
-                        {format(start, "h:mm a")} – {format(end, "h:mm a")}
-                      </div>
-                      <div className="truncate text-xs opacity-90">
-                        {teamName}{coachName ? ` - ${coachName}` : ""} · {typeLabel}: {event.title}
-                      </div>
-                      {event.subFacility && height > 50 && (
-                        <div className="truncate text-[11px] opacity-75">
-                          {event.subFacility.facility.name} – {event.subFacility.name}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-            </div>
+                <Plus className="mr-1 h-4 w-4" />
+                New Event
+              </Button>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* Agenda view */}
-      {viewMode === "agenda" && (
-        <div className="rounded-lg border bg-card overflow-hidden divide-y">
-          {agendaDays.map((day) => {
-            const dayEvents = getEventsForDay(day);
-            const dayBlackouts = getBlackoutsForDay(day);
-            if (dayEvents.length === 0 && dayBlackouts.length === 0) return null;
-            const today = isToday(day);
-            return (
-              <div key={day.toISOString()}>
-                <div className={cn(
-                  "px-4 py-2 bg-muted/50 flex items-center gap-2",
-                  today && "bg-primary/10",
-                  dayBlackouts.length > 0 && "bg-red-50 dark:bg-red-950/20"
-                )}>
-                  <span className={cn(
-                    "text-sm font-semibold",
-                    today && "text-primary"
-                  )}>
-                    {format(day, "EEEE, MMM d")}
-                  </span>
-                  {today && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Today</Badge>
-                  )}
-                  {dayBlackouts.map((b) => (
-                    <Badge
-                      key={b.id}
-                      variant="destructive"
-                      className="text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => setSelectedBlackout(b)}
-                    >
-                      <Ban className="h-3 w-3 mr-1" />
-                      Blackout - {b.title}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="divide-y divide-border/50">
-                  {dayEvents.map((event) => {
-                    const start = parseISO(event.startTime);
-                    const end = parseISO(event.endTime);
-                    const coachName = event.team?.headCoach?.name;
-                    const typeLabel = getTypeLabel(event.type, event.gameVenue);
-                    const bgColor = event.team?.color ?? "#6b7280";
-                    const teamName = event.team?.name ?? "Club Event";
-                    const locationLabel = event.subFacility
-                      ? `${event.subFacility.facility.name} – ${event.subFacility.name}`
-                      : event.customLocation ?? "";
-                    return (
-                      <button
-                        key={event.id}
-                        className="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-accent/30 transition-colors"
-                        onClick={(e) => handleEventClick(event, e)}
-                      >
-                        <span className="text-xs text-muted-foreground w-[100px] shrink-0">
-                          {format(start, "h:mm a")} – {format(end, "h:mm a")}
-                        </span>
-                        <span
-                          className="h-3 w-3 rounded-full shrink-0"
-                          style={{ backgroundColor: bgColor }}
-                        />
-                        <span className="text-sm font-medium truncate flex-1">
-                          {event.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground truncate hidden sm:block max-w-[150px]">
-                          {teamName}{coachName ? ` - ${coachName}` : ""}
-                        </span>
-                        {locationLabel && (
-                          <span className="text-xs text-muted-foreground truncate hidden md:flex items-center gap-1 max-w-[180px]">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            {locationLabel}
-                          </span>
-                        )}
-                        <Badge variant="secondary" className="text-[10px] shrink-0">
-                          {typeLabel}
-                        </Badge>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          {!loading && agendaDays.every((d) => getEventsForDay(d).length === 0 && getBlackoutsForDay(d).length === 0) && (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              No events in this 2-week period.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Loading overlay */}
-      {loading && (
-        <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm">Loading events...</span>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && events.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <CalendarDays className="h-12 w-12 text-muted-foreground/40" />
-          <h3 className="mt-4 text-lg font-medium">No events scheduled</h3>
-          <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-            {canManage
-              ? "Click on a day or use the New Event button to schedule your first event."
-              : "No events found for the selected filters and date range."}
-          </p>
-          {canManage && (
-            <Button
-              className="mt-4"
-              onClick={() => {
-                setCreateDate(new Date());
-                setShowCreateForm(true);
-              }}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              New Event
-            </Button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Event form dialog */}
       {(showCreateForm || editEvent) && (

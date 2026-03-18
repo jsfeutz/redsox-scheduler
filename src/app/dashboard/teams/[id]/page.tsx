@@ -219,10 +219,10 @@ export default async function TeamDetailPage({ params }: Props) {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-6">
+      <div className="flex items-center gap-3 md:gap-4 shrink-0 py-2 md:py-0">
         <div
-          className="h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-lg"
+          className="h-9 w-9 md:h-12 md:w-12 rounded-lg md:rounded-xl flex items-center justify-center text-white font-bold text-sm md:text-lg shrink-0 shadow-lg"
           style={{ backgroundColor: team.color }}
         >
           {team.icon || team.name
@@ -232,10 +232,10 @@ export default async function TeamDetailPage({ params }: Props) {
             .slice(0, 2)
             .toUpperCase()}
         </div>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{team.name}</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-3xl font-bold tracking-tight truncate">{team.name}</h1>
           {team.ageGroup && (
-            <p className="text-muted-foreground text-sm">{team.ageGroup}</p>
+            <p className="text-muted-foreground text-xs md:text-sm">{team.ageGroup}</p>
           )}
         </div>
       </div>
@@ -247,6 +247,7 @@ export default async function TeamDetailPage({ params }: Props) {
           icon: team.icon,
           color: team.color,
           ageGroup: team.ageGroup,
+          active: team.active,
           headCoach: team.headCoach,
           members: team.members.map((m) => ({
             id: m.id,
@@ -320,4 +321,5 @@ export default async function TeamDetailPage({ params }: Props) {
       />
     </div>
   );
+
 }

@@ -60,8 +60,8 @@ export default async function SchedulesPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-6">
+      <div className="hidden md:block">
         <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
         <p className="text-muted-foreground mt-1">
           Games, practices, and events
