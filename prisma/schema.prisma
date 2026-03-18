@@ -412,6 +412,18 @@ model EmailVerification {
   @@index([email])
 }
 
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique @default(cuid())
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([email])
+}
+
 model VolunteerSlot {
   id              String              @id @default(cuid())
   name            String

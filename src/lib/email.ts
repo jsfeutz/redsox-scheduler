@@ -297,6 +297,35 @@ export async function sendSlotRequestResponse(opts: {
   await send(opts.to, `Time slot request ${status.toLowerCase()}: ${opts.eventTitle}`, html);
 }
 
+export async function sendPasswordResetEmail(opts: {
+  to: string;
+  token: string;
+}) {
+  const resetUrl = `${APP_URL}/reset-password?token=${opts.token}`;
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">Reset Your Password</h2>
+      <p style="color:#666;margin:0 0 20px">
+        We received a request to reset your password. Click the button below to choose a new one.
+        This link expires in 1 hour.
+      </p>
+      <a href="${resetUrl}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        Reset Password
+      </a>
+      <p style="color:#999;font-size:12px;margin-top:24px">
+        If you didn't request a password reset, you can safely ignore this email.
+        Your password will not be changed.
+      </p>
+    </div>
+  `;
+
+  await send(opts.to, "Reset your Rubicon Redsox password", html);
+}
+
 export async function sendJobCancellationNotification(opts: {
   to: string;
   name: string;
