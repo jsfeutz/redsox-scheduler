@@ -104,8 +104,10 @@ export function AcceptInviteForm({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
-          Optional. Receive SMS reminders about volunteer shifts. <a href="/sms-consent" className="underline">SMS Consent</a>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Optional. By providing your phone number, you consent to receive SMS notifications
+          (shift reminders, schedule changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
+          Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
         </p>
       </div>
 

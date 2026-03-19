@@ -154,8 +154,10 @@ export function PublicJobSignup({
           onChange={(e) => setPhone(e.target.value)}
           className="h-11 rounded-xl text-sm"
         />
-        <p className="text-[11px] text-muted-foreground">
-          Get SMS reminders about your shift. <a href="/sms-consent" className="underline">SMS Consent</a>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          By providing your phone number, you consent to receive SMS notifications about your volunteer shift
+          (confirmations, reminders, and changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
+          Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
         </p>
       </div>
       <div className="grid gap-1.5">

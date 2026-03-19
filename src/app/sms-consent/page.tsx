@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { MessageSquare, CheckCircle, XCircle, HelpCircle } from "lucide-react";
 
-export const metadata = { title: "SMS Consent & Opt-In" };
+export const metadata = { title: "SMS Consent & Opt-In — Rubicon Redsox" };
 
 export default function SmsConsentPage() {
   return (
@@ -33,43 +33,46 @@ export default function SmsConsentPage() {
             <h2 className="text-lg font-semibold mb-3">How You Opt In</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
               You may opt in to receive SMS text messages from Rubicon Redsox
-              Scheduler by voluntarily providing your phone number in one of the
-              following locations within the application:
+              Baseball Club by voluntarily providing your mobile phone number
+              in one of the following locations on our website
+              (schedule.rubiconredsox.com):
             </p>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <span>
-                  <strong className="text-foreground">Your Profile page</strong>{" "}
-                  — after logging in, you can add your phone number and enable
-                  SMS notifications in your account settings.
+                  <strong className="text-foreground">Volunteer Sign-Up Form</strong>{" "}
+                  — when you sign up for a volunteer job on our public Help
+                  Wanted board at schedule.rubiconredsox.com/help-wanted, you may
+                  optionally enter your phone number. By entering your phone number,
+                  you expressly consent to receive SMS text messages from us.
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <span>
-                  <strong className="text-foreground">
-                    Volunteer job signup form
-                  </strong>{" "}
-                  — when signing up for a volunteer job on the public Help
-                  Wanted board, you may optionally provide your phone number to
-                  receive reminders.
+                  <strong className="text-foreground">Account Profile</strong>{" "}
+                  — registered users can add a phone number and enable SMS
+                  notifications in their account profile settings. Toggling on
+                  &quot;Enable SMS Notifications&quot; constitutes your express consent.
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <span>
-                  <strong className="text-foreground">
-                    Invite acceptance form
-                  </strong>{" "}
-                  — when creating your account from an invitation, you may
-                  optionally provide your phone number.
+                  <strong className="text-foreground">Invitation Acceptance</strong>{" "}
+                  — when creating your account via an invitation link, you may
+                  optionally enter a phone number. By providing it, you consent
+                  to receive SMS notifications.
                 </span>
               </li>
             </ul>
             <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
               Providing your phone number is entirely voluntary. SMS
-              notifications are not required to use the Service.
+              notifications are not required to use the Rubicon Redsox Scheduler.
+              By entering your phone number in any of the above forms, you
+              expressly agree to receive transactional SMS text messages at
+              the number provided.
             </p>
           </section>
 
@@ -80,28 +83,19 @@ export default function SmsConsentPage() {
               What Messages You Will Receive
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              If you opt in, you will receive transactional SMS messages
-              including:
+              If you opt in, you will receive <strong className="text-foreground">transactional SMS text messages</strong>{" "}
+              related to your volunteer activity and schedule, including:
             </p>
             <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground list-disc pl-5">
-              <li>Confirmation when you sign up for a volunteer job</li>
-              <li>
-                Reminders before your scheduled shift (e.g., 24 hours and 2
-                hours before)
-              </li>
-              <li>
-                Notifications if a schedule event you&apos;re involved with is
-                changed or cancelled
-              </li>
-              <li>
-                Cancellation notices if your signup is removed by an
-                administrator
-              </li>
+              <li><strong className="text-foreground">Signup confirmations</strong> — confirmation when you sign up for a volunteer job</li>
+              <li><strong className="text-foreground">Shift reminders</strong> — reminders before your scheduled shift (e.g., 24 hours and 2 hours before)</li>
+              <li><strong className="text-foreground">Schedule changes</strong> — notifications if an event you&apos;re involved with is changed or cancelled</li>
+              <li><strong className="text-foreground">Cancellation notices</strong> — if your signup is removed by an administrator</li>
             </ul>
-            <p className="mt-3 text-sm text-muted-foreground">
+            <p className="mt-3 text-sm text-muted-foreground font-medium">
               Message frequency varies based on your signup activity. Typical
-              users receive 2-5 messages per week during the season. Message and
-              data rates may apply depending on your mobile carrier plan.
+              users receive <strong className="text-foreground">2-5 messages per week</strong> during the baseball season.
+              Message and data rates may apply depending on your mobile carrier plan.
             </p>
           </section>
 
@@ -109,22 +103,27 @@ export default function SmsConsentPage() {
 
           <section>
             <h2 className="text-lg font-semibold mb-3">How to Opt Out</h2>
+            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+              You can stop receiving SMS messages at any time using any of
+              these methods:
+            </p>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p className="flex items-start gap-2">
                 <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
                 <span>
-                  <strong className="text-foreground">Reply STOP</strong> to any
-                  SMS message you receive from us.
+                  <strong className="text-foreground">Reply STOP</strong> — text
+                  STOP to any SMS message you receive from us. You will receive
+                  a confirmation that you have been unsubscribed.
                 </span>
               </p>
               <p className="flex items-start gap-2">
                 <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
                 <span>
                   <strong className="text-foreground">
-                    Disable SMS in your profile
+                    Disable in your profile
                   </strong>{" "}
-                  — log in, go to your Profile page, and toggle off SMS
-                  notifications.
+                  — log in to schedule.rubiconredsox.com, go to your Profile
+                  page, and toggle off &quot;Enable SMS Notifications.&quot;
                 </span>
               </p>
               <p className="flex items-start gap-2">
@@ -133,7 +132,7 @@ export default function SmsConsentPage() {
                   <strong className="text-foreground">
                     Remove your phone number
                   </strong>{" "}
-                  — delete your phone number from your profile to stop all SMS.
+                  — delete your phone number from your profile settings.
                 </span>
               </p>
             </div>
@@ -146,9 +145,9 @@ export default function SmsConsentPage() {
             <p className="text-sm text-muted-foreground flex items-start gap-2">
               <HelpCircle className="h-4 w-4 text-primary mt-0.5 shrink-0" />
               <span>
-                Reply <strong className="text-foreground">HELP</strong> to any
-                SMS message, or contact your organization administrator through
-                the app for assistance.
+                Text <strong className="text-foreground">HELP</strong> in reply to
+                any SMS message for assistance, or contact the organization
+                administrator through the app.
               </span>
             </p>
           </section>
@@ -160,12 +159,22 @@ export default function SmsConsentPage() {
             Redsox Scheduler Notifications
           </p>
           <p>
+            <strong className="text-foreground">Organization:</strong> Rubicon
+            Redsox Baseball Club, Rubicon, WI
+          </p>
+          <p>
             <strong className="text-foreground">Message Types:</strong>{" "}
-            Transactional (signup confirmations, reminders, schedule changes)
+            Transactional — signup confirmations, shift reminders, schedule
+            changes, cancellation notices
           </p>
           <p>
             <strong className="text-foreground">Frequency:</strong> Varies;
-            typically 2-5 messages per week during season
+            typically 2-5 messages per week during baseball season
+          </p>
+          <p>
+            <strong className="text-foreground">Opt-in:</strong> By providing
+            your phone number on our volunteer sign-up form, account profile, or
+            invitation acceptance form
           </p>
           <p>
             <strong className="text-foreground">Opt-out:</strong> Reply STOP at
@@ -177,7 +186,8 @@ export default function SmsConsentPage() {
           </p>
           <p>
             Message and data rates may apply. Carriers are not liable for
-            delayed or undelivered messages.
+            delayed or undelivered messages. Consent is not a condition of
+            purchase or use of the Service.
           </p>
         </div>
 
