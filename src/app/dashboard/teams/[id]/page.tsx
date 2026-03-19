@@ -270,6 +270,9 @@ export default async function TeamDetailPage({ params }: Props) {
           notes: evt.notes,
           isRecurring: evt.isRecurring,
           recurrenceRule: evt.recurrenceRule,
+          gameVenue: evt.gameVenue,
+          customLocation: evt.customLocation,
+          customLocationUrl: evt.customLocationUrl,
           conflicts: conflictMap.get(evt.id) ?? [],
           gameJobs: evt.gameJobs.map((gj) => {
             const eventVolunteers = gj.assignments.map((a) => a.name).filter(Boolean) as string[];

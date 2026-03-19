@@ -108,6 +108,9 @@ interface EventSummary {
   notes: string | null;
   isRecurring: boolean;
   recurrenceRule: string | null;
+  gameVenue?: string | null;
+  customLocation?: string | null;
+  customLocationUrl?: string | null;
   conflicts: ConflictInfo[];
   gameJobs: GameJobSummary[];
 }
@@ -488,7 +491,7 @@ export function TeamDetailTabs({
                               <h3 className="text-sm font-semibold truncate">{evt.title}</h3>
                               <span className="text-xs text-muted-foreground">-</span>
                               <Badge variant={evt.type === "GAME" ? "default" : "secondary"} className="rounded-lg text-[10px] shrink-0">
-                                {evt.type === "GAME" ? "Game" : evt.type === "PRACTICE" ? "Practice" : evt.type === "CLUB_EVENT" ? "Club Event" : "Other"}
+                                {evt.type === "GAME" ? (evt.gameVenue === "AWAY" ? "Away" : "Home") : evt.type === "PRACTICE" ? "Practice" : evt.type === "CLUB_EVENT" ? "Club Event" : "Other"}
                               </Badge>
                               {isOtherTeam && (evt as any).teamName && (
                                 <Badge variant="outline" className="rounded-lg text-[10px] shrink-0" style={{ borderColor: (evt as any).teamColor }}>
@@ -631,6 +634,9 @@ export function TeamDetailTabs({
             teamId: team.id,
             subFacilityId: editingEvent.subFacilityId,
             seasonId: editingEvent.seasonId,
+            gameVenue: editingEvent.gameVenue,
+            customLocation: editingEvent.customLocation,
+            customLocationUrl: editingEvent.customLocationUrl,
           } : undefined}
         />
 
