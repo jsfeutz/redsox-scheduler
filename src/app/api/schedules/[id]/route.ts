@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   getCurrentUser,
-  canManageSchedule,
   canBumpEvents,
   canManageTeam,
   isOrgAdmin,
+  canMutateExistingScheduleEvent,
 } from "@/lib/auth-helpers";
 import { Prisma } from "@prisma/client";
 import { notifyScheduleChange, formatEventDate } from "@/lib/notify";
+import { createAutoJobs } from "@/lib/auto-jobs";
 
 const eventInclude = {
   team: { select: { id: true, name: true, color: true } },
@@ -55,13 +56,14 @@ export async function PUT(req: Request, { params }: RouteContext) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!canManageSchedule(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const existing = await prisma.scheduleEvent.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canMutateExistingScheduleEvent(user, existing.teamId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (existing.teamId && !(await canManageTeam(user, existing.teamId))) {
@@ -94,6 +96,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
     customLocation,
     customLocationUrl,
     gameVenue,
+    noJobs,
     force,
   } = body;
 
@@ -173,9 +176,31 @@ export async function PUT(req: Request, { params }: RouteContext) {
       customLocation: wantsCustomLoc ? customLocation?.trim() || null : null,
       customLocationUrl: wantsCustomLoc ? customLocationUrl?.trim() || null : null,
       gameVenue: type === "GAME" ? (gameVenue || "HOME") : null,
+      noJobs: !!noJobs,
     },
     include: eventInclude,
   });
+
+  const noJobsEnabled = !!noJobs;
+  const noJobsToggled = noJobsEnabled !== !!existing.noJobs;
+  const switchedToAway = isAwayGame && existing.gameVenue !== "AWAY";
+  const switchedToHome = !isAwayGame && existing.gameVenue === "AWAY" && type === "GAME";
+
+  if (switchedToAway || (noJobsToggled && noJobsEnabled)) {
+    await prisma.gameJob.deleteMany({
+      where: { scheduleEventId: id },
+    });
+  } else if ((switchedToHome || (noJobsToggled && !noJobsEnabled)) && !isAwayGame) {
+    await createAutoJobs({
+      id,
+      type,
+      teamId: teamId || null,
+      seasonId: seasonId || null,
+      subFacilityId: subFacilityId || null,
+      gameVenue: gameVenue || "HOME",
+      organizationId: user.organizationId,
+    });
+  }
 
   const timeChanged =
     existing.startTime.getTime() !== newStart.getTime() ||
@@ -203,13 +228,14 @@ export async function DELETE(req: Request, { params }: RouteContext) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!canManageSchedule(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const existing = await prisma.scheduleEvent.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canMutateExistingScheduleEvent(user, existing.teamId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (existing.teamId && !(await canManageTeam(user, existing.teamId))) {

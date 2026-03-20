@@ -54,6 +54,30 @@ export function canManageSchedule(role: UserRole): boolean {
   return scheduleRoles.includes(role);
 }
 
+/** Create via POST /api/schedules: org schedule roles, or team staff for non–club events on that team. */
+export async function canCreateScheduleEventViaApi(
+  user: SessionUser,
+  eventType: string,
+  teamId: string | null | undefined
+): Promise<boolean> {
+  if (canManageSchedule(user.role)) return true;
+  if (eventType === "CLUB_EVENT") return false;
+  const tid =
+    typeof teamId === "string" && teamId.trim() ? teamId.trim() : null;
+  if (!tid) return false;
+  return canManageTeam(user, tid);
+}
+
+/** PUT/DELETE /api/schedules/[id]: org schedule roles, or team staff for team-tied events. */
+export async function canMutateExistingScheduleEvent(
+  user: SessionUser,
+  existingTeamId: string | null
+): Promise<boolean> {
+  if (canManageSchedule(user.role)) return true;
+  if (existingTeamId && (await canManageTeam(user, existingTeamId))) return true;
+  return false;
+}
+
 export function canBumpEvents(role: UserRole): boolean {
   return bumpRoles.includes(role);
 }

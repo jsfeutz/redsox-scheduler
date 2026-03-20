@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,17 +41,22 @@ import {
   AlertTriangle,
   UserPlus,
   X,
-  ChevronDown,
   Loader2,
   Save,
+  Copy,
+  Check,
+  Minus,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { TemplateForm } from "@/components/jobs/template-form";
-import { EventForm } from "@/components/schedules/event-form";
+import { ScheduleView } from "@/components/schedules/schedule-view";
 import { TeamMembers } from "@/components/teams/team-members";
 import { TeamRoster } from "@/components/teams/team-roster";
+import { JobSlotRow } from "@/components/jobs/job-slot-row";
+import type { JobSlotData } from "@/components/jobs/job-slot-row";
+import { AddJobToEvent } from "@/components/jobs/add-job-to-event";
 
 interface TeamMember {
   id: string;
@@ -77,15 +83,7 @@ interface TeamInfo {
   seasons: Season[];
 }
 
-interface GameJobSummary {
-  id: string;
-  name: string;
-  slotsNeeded: number;
-  filled: number;
-  isPublic: boolean;
-  scope?: string;
-  volunteerNames: string[];
-}
+type GameJobSummary = JobSlotData;
 
 interface ConflictInfo {
   teamName: string;
@@ -111,12 +109,13 @@ interface EventSummary {
   gameVenue?: string | null;
   customLocation?: string | null;
   customLocationUrl?: string | null;
+  noJobs?: boolean;
   conflicts: ConflictInfo[];
   gameJobs: GameJobSummary[];
 }
 
 interface SchedulingData {
-  teams: { id: string; name: string; color: string }[];
+  teams: { id: string; name: string; color: string; headCoach?: { name: string } | null }[];
   facilities: { id: string; name: string; subFacilities: { id: string; name: string }[] }[];
   seasons: { id: string; name: string; startDate: string | Date; endDate: string | Date }[];
   canSchedule: boolean;
@@ -167,6 +166,10 @@ interface TeamDetailTabsProps {
   signupStats?: { totalSlots: number; filledSlots: number };
   canManage: boolean;
   scheduling: SchedulingData;
+  /** Org admin — passed through to schedule calendar (blackouts, etc.). */
+  isAdmin?: boolean;
+  /** Teams the user may act on in schedule UI (same semantics as main Schedule page). */
+  userTeams?: SchedulingData["teams"];
 }
 
 const roleBadge: Record<string, string> = {
@@ -183,114 +186,23 @@ export function TeamDetailTabs({
   teamSpecificTemplates,
   canManage,
   scheduling,
+  isAdmin = false,
+  userTeams,
 }: TeamDetailTabsProps) {
   const games = events.filter((e) => e.type === "GAME");
   const practices = events.filter((e) => e.type === "PRACTICE");
-  const [eventFormOpen, setEventFormOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<EventSummary | null>(null);
-  const [deletingEvent, setDeletingEvent] = useState<EventSummary | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
-  const [showAllEvents, setShowAllEvents] = useState(false);
-  const [allEvents, setAllEvents] = useState<EventSummary[]>([]);
-  const [allEventsLoading, setAllEventsLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    if (!showAllEvents) { setAllEvents([]); return; }
-    let cancelled = false;
-    async function fetchAll() {
-      setAllEventsLoading(true);
-      try {
-        const now = new Date().toISOString();
-        const res = await fetch(`/api/schedules?startDate=${now}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setAllEvents(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data.map((e: any) => ({
-            id: e.id,
-            title: e.title,
-            type: e.type,
-            startTime: e.startTime,
-            endTime: e.endTime,
-            recurrenceGroupId: e.recurrenceGroupId,
-            facility: e.subFacility ? `${e.subFacility.facility.name} - ${e.subFacility.name}` : e.customLocation ?? "TBD",
-            subFacilityId: e.subFacilityId,
-            seasonId: e.seasonId,
-            notes: e.notes,
-            isRecurring: e.isRecurring,
-            recurrenceRule: e.recurrenceRule,
-            gameVenue: e.gameVenue,
-            teamName: e.team?.name,
-            teamColor: e.team?.color,
-            conflicts: [],
-            gameJobs: (e.gameJobs ?? []).map((gj: any) => ({
-              id: gj.id,
-              name: gj.overrideName ?? gj.jobTemplate?.name ?? "Job",
-              slotsNeeded: gj.slotsNeeded,
-              filled: gj.assignments?.length ?? 0,
-              isPublic: gj.isPublic,
-              scope: gj.jobTemplate?.scope ?? "FACILITY",
-              volunteerNames: gj.assignments?.map((a: any) => a.name).filter(Boolean) ?? [],
-            })),
-          }))
-        );
-      } finally {
-        if (!cancelled) setAllEventsLoading(false);
-      }
-    }
-    fetchAll();
-    return () => { cancelled = true; };
-  }, [showAllEvents]);
-
-  const displayedEvents = showAllEvents
-    ? [...events, ...allEvents.filter((e) => e.id && !events.some((te) => te.id === e.id))].sort((a, b) => a.startTime.localeCompare(b.startTime))
-    : events;
-
-  function handleEventSaved() {
-    setEventFormOpen(false);
-    setEditingEvent(null);
-    router.refresh();
-  }
-
-  function openEdit(evt: EventSummary) {
-    setEditingEvent(evt);
-    setEventFormOpen(true);
-  }
-
-  function openCreate() {
-    setEditingEvent(null);
-    setEventFormOpen(true);
-  }
-
-  async function handleDelete() {
-    if (!deletingEvent) return;
-    setDeleteLoading(true);
-    try {
-      const res = await fetch(`/api/schedules/${deletingEvent.id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
-      toast.success("Event deleted");
-      setDeletingEvent(null);
-      router.refresh();
-    } catch {
-      toast.error("Failed to delete event");
-    } finally {
-      setDeleteLoading(false);
-    }
-  }
-
   const [activeTab, setActiveTab] = useState<string | number | null>("overview");
-  const [scheduleFilter, setScheduleFilter] = useState<"all" | "games" | "practices" | "jobs" | "open-jobs">("all");
 
-  const allFacilityJobs = events.flatMap((e) => e.gameJobs.filter((j) => j.scope === "FACILITY"));
+  const allFacilityJobs = events.flatMap((e) => e.gameJobs.filter((j) => j.scope === "FACILITY" && !j.disabled));
   const openJobs = allFacilityJobs.filter((j) => j.filled < j.slotsNeeded);
 
-  function goToSchedule(filter: "all" | "games" | "practices" | "jobs" | "open-jobs") {
-    setScheduleFilter(filter);
+  function goToSchedule() {
     setActiveTab("schedule");
   }
+
+  const scheduleUserTeams = userTeams ?? scheduling.teams;
 
   const tabs = [
     { value: "overview", label: "Overview", icon: Info },
@@ -301,7 +213,7 @@ export function TeamDetailTabs({
   ];
 
   return (
-    <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v !== "schedule") setScheduleFilter("all"); }} className="flex-1 min-h-0 flex flex-col md:block gap-0">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col md:block gap-0">
       <div className="flex shrink-0 border-b border-border/50 overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0 scrollbar-none">
         {tabs.map((tab) => {
           const active = activeTab === tab.value;
@@ -309,7 +221,7 @@ export function TeamDetailTabs({
             <button
               key={tab.value}
               type="button"
-              onClick={() => { setActiveTab(tab.value); if (tab.value !== "schedule") setScheduleFilter("all"); }}
+              onClick={() => setActiveTab(tab.value)}
               className={cn(
                 "flex items-center gap-1 md:gap-1.5 px-3 md:px-4 py-2.5 text-xs md:text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0",
                 active
@@ -326,16 +238,16 @@ export function TeamDetailTabs({
 
       <TabsContent value="overview" className="overflow-y-auto min-h-0">
         <div className="grid grid-cols-2 gap-2 md:gap-3 mb-4 md:mb-6">
-          <button type="button" className="text-left" onClick={() => goToSchedule("games")}>
+          <button type="button" className="text-left" onClick={() => goToSchedule()}>
             <StatCard label="Upcoming Games" value={games.length} clickable />
           </button>
-          <button type="button" className="text-left" onClick={() => goToSchedule("practices")}>
+          <button type="button" className="text-left" onClick={() => goToSchedule()}>
             <StatCard label="Practices" value={practices.length} clickable />
           </button>
-          <button type="button" className="text-left" onClick={() => goToSchedule("jobs")}>
+          <button type="button" className="text-left" onClick={() => goToSchedule()}>
             <StatCard label="Facility Jobs" value={allFacilityJobs.length} clickable />
           </button>
-          <button type="button" className="text-left" onClick={() => goToSchedule("open-jobs")}>
+          <button type="button" className="text-left" onClick={() => goToSchedule()}>
             <StatCard label="Open Jobs" value={openJobs.length} clickable highlight={openJobs.length > 0} />
           </button>
         </div>
@@ -388,326 +300,24 @@ export function TeamDetailTabs({
         )}
       </TabsContent>
 
-      <TabsContent value="schedule" className="overflow-y-auto min-h-0">
-        <div className="space-y-3 md:space-y-4">
-          {/* Filter chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none -mx-1 px-1">
-            {([
-              { key: "all", label: "All" },
-              { key: "games", label: "Games" },
-              { key: "practices", label: "Practices" },
-              { key: "jobs", label: "Jobs" },
-              { key: "open-jobs", label: "Open Jobs" },
-            ] as const).map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setScheduleFilter(f.key)}
-                className={cn(
-                  "px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0",
-                  scheduleFilter === f.key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="show-all-events"
-                checked={showAllEvents}
-                onCheckedChange={setShowAllEvents}
-                className="scale-90"
-              />
-              <Label htmlFor="show-all-events" className="text-xs font-normal text-muted-foreground cursor-pointer">
-                Show all events
-              </Label>
-              {allEventsLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-            </div>
-            {scheduling.canSchedule && (
-              <Button
-                size="sm"
-                className="rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-all"
-                onClick={openCreate}
-              >
-                <Plus className="mr-1.5 h-4 w-4" />
-                Schedule Event
-              </Button>
-            )}
-          </div>
-
-          {(() => {
-            let filtered = displayedEvents;
-            if (scheduleFilter === "games") filtered = filtered.filter((e) => e.type === "GAME");
-            else if (scheduleFilter === "practices") filtered = filtered.filter((e) => e.type === "PRACTICE");
-            else if (scheduleFilter === "jobs") filtered = filtered.filter((e) => e.gameJobs.some((j) => j.scope === "FACILITY"));
-            else if (scheduleFilter === "open-jobs") filtered = filtered.filter((e) => e.gameJobs.some((j) => j.scope === "FACILITY" && j.filled < j.slotsNeeded));
-
-            return filtered.length === 0 ? (
-            <Card className="rounded-xl border-border/50">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Calendar className="h-8 w-8 text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  {scheduleFilter === "all" ? "No upcoming events for this team." :
-                   scheduleFilter === "games" ? "No upcoming games." :
-                   scheduleFilter === "practices" ? "No upcoming practices." :
-                   scheduleFilter === "jobs" ? "No events with facility jobs." :
-                   "No open jobs right now."}
-                </p>
-                {scheduleFilter !== "all" && (
-                  <button type="button" className="text-xs text-primary hover:underline font-medium mt-2" onClick={() => setScheduleFilter("all")}>
-                    Show all events
-                  </button>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {filtered.map((evt) => {
-                const isOtherTeam = showAllEvents && !events.some((e) => e.id === evt.id);
-                const facilityJobs = evt.gameJobs.filter((j) => j.scope === "FACILITY");
-                const isExpanded = expandedEventId === evt.id;
-                const totalFilled = facilityJobs.reduce((s, j) => s + j.filled, 0);
-                const totalSlots = facilityJobs.reduce((s, j) => s + j.slotsNeeded, 0);
-                const barColor = isOtherTeam
-                  ? ((evt as any).teamColor ?? "var(--muted)")
-                  : (evt.type === "GAME" ? team.color : "var(--muted)");
-                return (
-                  <Card key={evt.id} className={cn("rounded-2xl border-border/50 overflow-hidden", isOtherTeam && "opacity-70")}>
-                    <div className="h-0.5" style={{ backgroundColor: barColor }} />
-                    <CardContent className="py-0">
-                      <button
-                        type="button"
-                        className="w-full py-4 text-left"
-                        onClick={() => setExpandedEventId(isExpanded ? null : evt.id)}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="text-sm font-semibold truncate">{evt.title}</h3>
-                              <span className="text-xs text-muted-foreground">-</span>
-                              <Badge variant={evt.type === "GAME" ? "default" : "secondary"} className="rounded-lg text-[10px] shrink-0">
-                                {evt.type === "GAME" ? (evt.gameVenue === "AWAY" ? "Away" : "Home") : evt.type === "PRACTICE" ? "Practice" : evt.type === "CLUB_EVENT" ? "Club Event" : "Other"}
-                              </Badge>
-                              {isOtherTeam && (evt as any).teamName && (
-                                <Badge variant="outline" className="rounded-lg text-[10px] shrink-0" style={{ borderColor: (evt as any).teamColor }}>
-                                  {(evt as any).teamName}
-                                </Badge>
-                              )}
-                              {evt.recurrenceGroupId && <Badge variant="outline" className="rounded-lg text-[10px] shrink-0">Recurring</Badge>}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {format(parseISO(evt.startTime), "EEE, MMM d - h:mm a")} - {format(parseISO(evt.endTime), "h:mm a")}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {evt.facility}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {facilityJobs.length > 0 && (
-                              <div className="text-right mr-1">
-                                <p className="text-xs text-muted-foreground">Jobs</p>
-                                <p className="text-sm font-semibold">
-                                  {totalFilled}/{totalSlots}
-                                </p>
-                              </div>
-                            )}
-                            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
-                          </div>
-                        </div>
-                      </button>
-
-                      {isExpanded && (
-                        <div className="pb-4 space-y-3">
-                          {evt.conflicts.length > 0 && (
-                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <AlertTriangle className="h-3 w-3 text-amber-500" />
-                                <span className="text-[11px] font-semibold text-amber-600">Facility conflict</span>
-                              </div>
-                              {evt.conflicts.map((c, i) => (
-                                <div key={i} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: c.teamColor }} />
-                                  <span>{c.teamName} — {c.title}</span>
-                                  <span className="text-[10px]">
-                                    ({format(parseISO(c.startTime), "h:mm a")} - {format(parseISO(c.endTime), "h:mm a")})
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {evt.notes && (
-                            <div className="rounded-lg bg-muted/30 px-3 py-2">
-                              <p className="text-xs text-muted-foreground">{evt.notes}</p>
-                            </div>
-                          )}
-
-                          {facilityJobs.length > 0 ? (
-                            <div className="space-y-2">
-                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Volunteer Jobs</h4>
-                              {facilityJobs.map((job) => (
-                                <div key={job.id} className="rounded-lg border border-border/50 px-3 py-2.5">
-                                  <div className="flex items-center justify-between mb-1">
-                                    <div className="flex items-center gap-2">
-                                      <Briefcase className="h-3 w-3 text-muted-foreground" />
-                                      <span className="text-sm font-medium">{job.name}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      {job.isPublic ? (
-                                        <Globe className="h-3 w-3 text-emerald-500" />
-                                      ) : (
-                                        <Lock className="h-3 w-3 text-muted-foreground" />
-                                      )}
-                                      <Badge variant={job.filled >= job.slotsNeeded ? "default" : "outline"} className="rounded-lg text-[10px]">
-                                        {job.filled}/{job.slotsNeeded}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                  {job.volunteerNames.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                      {job.volunteerNames.map((name, i) => (
-                                        <Badge key={i} variant="secondary" className="rounded-lg text-[10px] font-normal">
-                                          {name}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">No volunteers yet</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">No facility volunteer jobs for this event.</p>
-                          )}
-
-                          {scheduling.canSchedule && (
-                            <div className="flex items-center gap-2 pt-1">
-                              <Button variant="outline" size="sm" className="rounded-xl text-xs" onClick={() => openEdit(evt)}>
-                                <Pencil className="mr-1.5 h-3 w-3" />
-                                Edit
-                              </Button>
-                              <Button variant="outline" size="sm" className="rounded-xl text-xs text-destructive hover:text-destructive" onClick={() => setDeletingEvent(evt)}>
-                                <Trash2 className="mr-1.5 h-3 w-3" />
-                                Delete
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          );
-          })()}
-        </div>
-
-        <EventForm
-          open={eventFormOpen}
-          onClose={() => { setEventFormOpen(false); setEditingEvent(null); }}
-          onSaved={handleEventSaved}
+      <TabsContent value="schedule" className="flex flex-col flex-1 min-h-0 overflow-hidden md:overflow-y-auto md:min-h-[28rem]">
+        <ScheduleView
           teams={scheduling.teams}
           facilities={scheduling.facilities}
           seasons={scheduling.seasons}
+          canManage={scheduling.canSchedule}
           canBump={scheduling.canBump}
-          fixedTeamId={team.id}
-          event={editingEvent ? {
-            id: editingEvent.id,
-            title: editingEvent.title,
-            type: editingEvent.type,
-            startTime: editingEvent.startTime,
-            endTime: editingEvent.endTime,
-            notes: editingEvent.notes,
-            isRecurring: editingEvent.isRecurring,
-            recurrenceRule: editingEvent.recurrenceRule,
-            teamId: team.id,
-            subFacilityId: editingEvent.subFacilityId,
-            seasonId: editingEvent.seasonId,
-            gameVenue: editingEvent.gameVenue,
-            customLocation: editingEvent.customLocation,
-            customLocationUrl: editingEvent.customLocationUrl,
-          } : undefined}
+          isAdmin={isAdmin}
+          userTeams={scheduleUserTeams}
+          lockedTeamId={team.id}
+          viewModeStorageKey={`schedule-viewMode-team-${team.id}`}
+          onScheduleChanged={() => router.refresh()}
         />
-
-        <Dialog open={!!deletingEvent} onOpenChange={(o) => !o && setDeletingEvent(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                Delete Event
-              </DialogTitle>
-              <DialogDescription>
-                Delete <strong>{deletingEvent?.title}</strong> on{" "}
-                {deletingEvent && format(parseISO(deletingEvent.startTime), "EEE, MMM d 'at' h:mm a")}? This cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeletingEvent(null)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
-                {deleteLoading ? "Deleting..." : "Delete"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </TabsContent>
 
       <TabsContent value="staff" className="overflow-y-auto min-h-0">
         <div className="space-y-6">
-          <Card className="rounded-2xl border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Coaching Staff</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {team.headCoach && (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{team.headCoach.name}</p>
-                    <p className="text-xs text-muted-foreground">{team.headCoach.email}</p>
-                  </div>
-                  <Badge variant="secondary" className="rounded-lg text-[10px]">Head Coach</Badge>
-                </div>
-              )}
-              {team.members.map((m) => (
-                <div key={m.id} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{m.user.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.user.email}</p>
-                  </div>
-                  <Badge variant="secondary" className="rounded-lg text-[10px]">{roleBadge[m.role] ?? m.role}</Badge>
-                </div>
-              ))}
-              {!team.headCoach && team.members.length === 0 && (
-                <p className="text-sm text-muted-foreground">No staff assigned yet.</p>
-              )}
-              <TeamMembers teamId={team.id} canManage={canManage} />
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-4 sm:grid-cols-3 mb-2">
-            <StatCard
-              label="Team Jobs"
-              value={teamRoles.length}
-            />
-            <StatCard
-              label="Assigned"
-              value={teamRoles.reduce((s, r) => s + r.assignments.length, 0)}
-            />
-            <StatCard
-              label="Open Slots"
-              value={teamRoles.reduce((s, r) => s + Math.max(0, r.maxSlots - r.assignments.length), 0)}
-            />
-          </div>
+          <StaffList teamId={team.id} canManage={canManage} />
 
           {teamRoles.length === 0 ? (
             <Card className="rounded-2xl border-border/50">
@@ -747,6 +357,179 @@ export function TeamDetailTabs({
   );
 }
 
+/* ========== Staff List with Inline Role Editing ========== */
+
+const ROLE_OPTIONS = [
+  { value: "HEAD_COACH", label: "Head Coach" },
+  { value: "ASSISTANT_COACH", label: "Asst. Coach" },
+  { value: "TEAM_MANAGER", label: "Manager" },
+] as const;
+
+const staffRoleColors: Record<string, string> = {
+  HEAD_COACH: "bg-red-500/15 text-red-600 border-red-500/20",
+  ASSISTANT_COACH: "bg-blue-500/15 text-blue-600 border-blue-500/20",
+  TEAM_MANAGER: "bg-amber-500/15 text-amber-600 border-amber-500/20",
+};
+
+interface StaffMember {
+  id: string;
+  role: string;
+  user: { id: string; name: string | null; email: string };
+}
+
+function StaffList({ teamId, canManage }: { teamId: string; canManage: boolean }) {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [members, setMembers] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const fetchMembers = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/teams/${teamId}/members`);
+      if (!res.ok) return;
+      setMembers(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [teamId]);
+
+  useEffect(() => { fetchMembers(); }, [fetchMembers]);
+
+  async function handleRoleChange(userId: string, newRole: string) {
+    setUpdatingId(userId);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/members`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role: newRole }),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        throw new Error(body.error || "Failed to update role");
+      }
+      toast.success("Role updated");
+      await fetchMembers();
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleRemove(userId: string, name: string | null) {
+    setRemovingId(userId);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/members`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        throw new Error(body.error || "Failed to remove member");
+      }
+      toast.success(`${name || "Member"} removed`);
+      setMembers((prev) => prev.filter((m) => m.user.id !== userId));
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  const isSelf = (userId: string) => userId === session?.user?.id;
+  const isAdmin = session?.user?.role === "ADMIN";
+
+  return (
+    <Card className="rounded-2xl border-border/50">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Coaching Staff</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {loading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : members.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">No staff assigned yet.</p>
+        ) : (
+          members.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent/30 transition-colors group"
+            >
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+                {m.user.name?.[0]?.toUpperCase() || "?"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate leading-tight">
+                  {m.user.name || m.user.email}
+                  {isSelf(m.user.id) && <span className="text-muted-foreground ml-1 text-xs font-normal">You</span>}
+                </p>
+                {m.user.name && (
+                  <p className="text-[11px] text-muted-foreground truncate leading-tight">{m.user.email}</p>
+                )}
+              </div>
+              {canManage && !isSelf(m.user.id) ? (
+                <Select
+                  value={m.role}
+                  onValueChange={(v) => v && handleRoleChange(m.user.id, v)}
+                >
+                  <SelectTrigger className="h-7 w-auto min-w-[100px] rounded-lg text-[10px] border-0 bg-transparent px-2 shrink-0">
+                    <Badge
+                      variant="outline"
+                      className={cn("rounded-lg text-[10px] pointer-events-none", staffRoleColors[m.role])}
+                    >
+                      {updatingId === m.user.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : null}
+                      {roleBadge[m.role] ?? m.role}
+                    </Badge>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className={cn("rounded-lg text-[10px] shrink-0", staffRoleColors[m.role])}
+                >
+                  {roleBadge[m.role] ?? m.role}
+                </Badge>
+              )}
+              {canManage && !isSelf(m.user.id) && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  disabled={removingId === m.user.id}
+                  onClick={() => handleRemove(m.user.id, m.user.name)}
+                >
+                  {removingId === m.user.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  )}
+                </Button>
+              )}
+            </div>
+          ))
+        )}
+        {canManage && (
+          <TeamMembers teamId={teamId} canManage={false} hideList inviteOnly onInviteSuccess={fetchMembers} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ========== Event Job Card with Assignment ========== */
 
 function EventJobCard({
@@ -758,6 +541,7 @@ function EventJobCard({
   teamColor: string;
   canManage: boolean;
 }) {
+  const router = useRouter();
   return (
     <Card className="rounded-2xl border-border/50 overflow-hidden">
       <div className="h-0.5" style={{ backgroundColor: event.type === "GAME" ? teamColor : "var(--muted)" }} />
@@ -775,136 +559,27 @@ function EventJobCard({
           <MapPin className="h-3 w-3" />
           {event.facility}
         </div>
-        {event.gameJobs.length > 0 && (
-          <div className="space-y-3 mt-3 pt-3 border-t border-border/30">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Volunteer Jobs</p>
-            {event.gameJobs.map((gj) => (
+        <div className="space-y-3 mt-3 pt-3 border-t border-border/30">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Volunteer Jobs</p>
+          {event.gameJobs.length > 0 ? (
+            event.gameJobs.map((gj) => (
               <JobSlotRow key={gj.id} job={gj} canManage={canManage} />
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function JobSlotRow({
-  job,
-  canManage,
-}: {
-  job: GameJobSummary;
-  canManage: boolean;
-}) {
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [saving, setSaving] = useState(false);
-  const router = useRouter();
-  const hasOpen = job.filled < job.slotsNeeded;
-
-  async function handleAssign() {
-    if (!name.trim()) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/jobs/${job.id}/assignments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim() || undefined }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to assign");
-      }
-      toast.success(`${name.trim()} assigned`);
-      setName("");
-      setEmail("");
-      setShowForm(false);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to assign");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-border/30 p-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{job.name}</span>
-          {job.isPublic ? (
-            <Globe className="h-3 w-3 text-emerald-500" />
+            ))
           ) : (
-            <Lock className="h-3 w-3 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">No volunteer jobs for this event.</p>
+          )}
+          {canManage && (
+            <AddJobToEvent
+              scheduleEventId={event.id}
+              existingTemplateIds={event.gameJobs
+                .map((j) => j.templateId)
+                .filter(Boolean) as string[]}
+              onAdded={() => router.refresh()}
+            />
           )}
         </div>
-        <Badge
-          variant={job.filled >= job.slotsNeeded ? "default" : "secondary"}
-          className="rounded-lg text-[10px]"
-        >
-          {job.filled}/{job.slotsNeeded}
-        </Badge>
-      </div>
-
-      {job.volunteerNames.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {job.volunteerNames.map((vn, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center rounded-md bg-emerald-500/10 text-emerald-700 px-2 py-0.5 text-[11px] font-medium"
-            >
-              {vn}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {canManage && hasOpen && !showForm && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium mt-0.5"
-        >
-          <UserPlus className="h-3 w-3" />
-          Assign volunteer
-        </button>
-      )}
-
-      {showForm && (
-        <div className="mt-2 flex flex-col sm:flex-row gap-2">
-          <Input
-            placeholder="Name *"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="h-8 text-xs rounded-lg flex-1"
-          />
-          <Input
-            placeholder="Email (optional)"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="h-8 text-xs rounded-lg flex-1"
-          />
-          <div className="flex gap-1.5 shrink-0">
-            <Button
-              size="sm"
-              className="h-8 rounded-lg text-xs px-3"
-              onClick={handleAssign}
-              disabled={saving || !name.trim()}
-            >
-              {saving ? "..." : "Assign"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 rounded-lg p-0"
-              onClick={() => { setShowForm(false); setName(""); setEmail(""); }}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -988,7 +663,7 @@ function TeamRoleCard({
                 {role.forEventType.toLowerCase()}s only
               </Badge>
             )}
-            <Badge variant="secondary" className="rounded-lg text-[10px]">{role.hoursPerGame}h/game</Badge>
+            <Badge variant="secondary" className="rounded-lg text-[10px]">{role.hoursPerGame}h/event</Badge>
             <Badge variant={isFull ? "default" : "outline"} className="rounded-lg text-[10px]">
               {role.assignments.length}/{role.maxSlots}
             </Badge>
@@ -1090,13 +765,6 @@ const TEAM_COLORS = [
   "#d946ef", "#64748b", "#dc2626", "#2563eb", "#16a34a",
 ];
 
-interface OrgUser {
-  id: string;
-  name: string | null;
-  email: string;
-  role: string;
-}
-
 function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: boolean }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -1104,36 +772,13 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
   const [icon, setIcon] = useState(team.icon || "");
   const [color, setColor] = useState(team.color);
   const [active, setActive] = useState(team.active);
-  const [headCoachId, setHeadCoachId] = useState(team.headCoach?.id || "");
-  const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
-
-  const fetchUsers = useCallback(async () => {
-    setLoadingUsers(true);
-    try {
-      const res = await fetch("/api/organization/users");
-      if (res.ok) {
-        const data = await res.json();
-        setOrgUsers(data);
-      }
-    } catch {
-      /* ignore */
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
 
   const hasChanges =
     name !== team.name ||
     icon !== (team.icon || "") ||
     color !== team.color ||
-    active !== team.active ||
-    headCoachId !== (team.headCoach?.id || "");
+    active !== team.active;
 
   async function handleSave() {
     if (!name.trim()) {
@@ -1150,7 +795,6 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
           icon: icon || null,
           color,
           active,
-          headCoachId: headCoachId || null,
         }),
       });
       if (!res.ok) {
@@ -1257,26 +901,6 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Head Coach */}
-          <div className="grid gap-2">
-            <Label>Head Coach</Label>
-            <Select value={headCoachId || "__none__"} onValueChange={(v: string | null) => setHeadCoachId(!v || v === "__none__" ? "" : v)} disabled={!canManage || loadingUsers} items={{ __none__: "None", ...Object.fromEntries(orgUsers.map((u) => [u.id, `${u.name || u.email}${u.role === "ADMIN" ? " (Admin)" : u.role === "COACH" ? " (Coach)" : ""}`])) }}>
-              <SelectTrigger className="w-full h-11 rounded-xl">
-                <SelectValue placeholder={loadingUsers ? "Loading…" : "Select head coach"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__" label="None">
-                  <span className="text-muted-foreground">None</span>
-                </SelectItem>
-                {orgUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.id} label={`${u.name || u.email}${u.role === "ADMIN" ? " (Admin)" : u.role === "COACH" ? " (Coach)" : ""}`}>
-                    {u.name || u.email} {u.role === "ADMIN" ? "(Admin)" : u.role === "COACH" ? "(Coach)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           {/* Active/Inactive toggle */}
@@ -1433,7 +1057,7 @@ function JobToggleRow({ teamId, template }: { teamId: string; template: JobTempl
           <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
             {template.description && <span className="truncate">{template.description}</span>}
             <span className="shrink-0 capitalize">{template.forEventType === "ALL" ? "all events" : `${template.forEventType.toLowerCase()}s`}</span>
-            <span className="flex items-center gap-0.5 shrink-0"><Clock className="h-2.5 w-2.5" />{template.hoursPerGame}h/game</span>
+            <span className="flex items-center gap-0.5 shrink-0"><Clock className="h-2.5 w-2.5" />{template.hoursPerGame}h/event</span>
           </div>
         </div>
         <button onClick={handleToggle} disabled={loading} className="shrink-0" title={active ? "Disable for this team" : "Enable for this team"}>
@@ -1533,7 +1157,7 @@ function TeamTemplateRow({ template }: { template: TeamSpecificTemplate }) {
         <p className="text-sm font-medium">{template.name}</p>
         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
           {template.description && <span className="truncate">{template.description}</span>}
-          <span className="flex items-center gap-0.5 shrink-0"><Clock className="h-2.5 w-2.5" />{template.hoursPerGame}h/game</span>
+          <span className="flex items-center gap-0.5 shrink-0"><Clock className="h-2.5 w-2.5" />{template.hoursPerGame}h/event</span>
           <span className="shrink-0">{template._count.gameJobs} job{template._count.gameJobs !== 1 ? "s" : ""}</span>
         </div>
       </div>

@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { name, description, scope, forEventType, hoursPerGame, maxSlots } = body;
+  const { name, description, scope, forEventType, hoursPerGame, maxSlots, askComfortLevel } = body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json(
@@ -68,6 +68,7 @@ export async function POST(req: Request) {
       forEventType: validEventTypes.includes(forEventType) ? forEventType : "ALL",
       hoursPerGame: typeof hoursPerGame === "number" ? hoursPerGame : 2,
       maxSlots: typeof maxSlots === "number" && maxSlots >= 1 ? maxSlots : 1,
+      askComfortLevel: typeof askComfortLevel === "boolean" ? askComfortLevel : false,
       organizationId: user.organizationId,
     },
     include: {

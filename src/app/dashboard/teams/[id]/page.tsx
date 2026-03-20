@@ -1,7 +1,14 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser, canManageTeam, canManageSchedule, canBumpEvents } from "@/lib/auth-helpers";
+import {
+  getCurrentUser,
+  canManageTeam,
+  canBumpEvents,
+  isOrgAdmin,
+  getUserTeamIds,
+} from "@/lib/auth-helpers";
+import { UserRole } from "@prisma/client";
 import { redirect, notFound } from "next/navigation";
 import { TeamDetailTabs } from "@/components/teams/team-detail-tabs";
 import { startOfDay } from "date-fns";
@@ -34,6 +41,10 @@ export default async function TeamDetailPage({ params }: Props) {
   if (!team) notFound();
 
   const canManage = await canManageTeam(user, id);
+
+  const isWideAccess =
+    user.role === UserRole.ADMIN || user.role === UserRole.SCHEDULE_MANAGER;
+  const userTeamIdList = isWideAccess ? [] : await getUserTeamIds(user.id);
 
   const [upcomingEvents, globalTeamTemplates, teamOverrides, teamSpecificTemplates, teamLevelJobs] =
     await Promise.all([
@@ -97,12 +108,12 @@ export default async function TeamDetailPage({ params }: Props) {
     teamLevelJobs.map((gj) => [gj.jobTemplateId, gj])
   );
 
-  const teamAssignmentsByTemplate = new Map<string, { name: string | null; email: string | null }[]>();
+  const teamAssignmentsByTemplate = new Map<string, { id: string; name: string | null; email: string | null }[]>();
   for (const gj of teamLevelJobs) {
     if (gj.assignments.length > 0) {
       teamAssignmentsByTemplate.set(
         gj.jobTemplateId,
-        gj.assignments.map((a) => ({ name: a.name, email: a.email }))
+        gj.assignments.map((a) => ({ id: a.id, name: a.name, email: a.email }))
       );
     }
   }
@@ -136,7 +147,7 @@ export default async function TeamDetailPage({ params }: Props) {
   const [allTeams, facilities, seasons] = await Promise.all([
     prisma.team.findMany({
       where: { organizationId: user.organizationId, active: true },
-      select: { id: true, name: true, color: true },
+      select: { id: true, name: true, color: true, headCoach: { select: { name: true } } },
       orderBy: { name: "asc" },
     }),
     prisma.facility.findMany({
@@ -204,9 +215,14 @@ export default async function TeamDetailPage({ params }: Props) {
     }
   }
 
+  const userTeamsForSchedule = isWideAccess
+    ? allTeams
+    : allTeams.filter((t) => userTeamIdList.includes(t.id));
+
   const signupStats = upcomingEvents.reduce(
     (acc, evt) => {
       for (const job of evt.gameJobs) {
+        if (job.disabled) continue;
         acc.totalSlots += job.slotsNeeded;
         const eventNames = job.assignments.map((a) => a.name).filter(Boolean);
         const teamNames = teamAssignmentsByTemplate.get(job.jobTemplateId)
@@ -273,21 +289,31 @@ export default async function TeamDetailPage({ params }: Props) {
           gameVenue: evt.gameVenue,
           customLocation: evt.customLocation,
           customLocationUrl: evt.customLocationUrl,
+          noJobs: evt.noJobs,
           conflicts: conflictMap.get(evt.id) ?? [],
           gameJobs: evt.gameJobs.map((gj) => {
-            const eventVolunteers = gj.assignments.map((a) => a.name).filter(Boolean) as string[];
-            const teamVolunteers = teamAssignmentsByTemplate.get(gj.jobTemplateId)
-              ?.map((a) => a.name)
-              .filter(Boolean) as string[] ?? [];
-            const allNames = [...new Set([...eventVolunteers, ...teamVolunteers])];
+            const eventVols = gj.assignments
+              .filter((a) => a.name)
+              .map((a) => ({ assignmentId: a.id, name: a.name as string }));
+            const teamVols = (teamAssignmentsByTemplate.get(gj.jobTemplateId) ?? [])
+              .filter((a) => a.name)
+              .map((a) => ({ assignmentId: a.id, name: a.name as string }));
+            const seen = new Set<string>();
+            const allVols = [...eventVols, ...teamVols].filter((v) => {
+              if (seen.has(v.name)) return false;
+              seen.add(v.name);
+              return true;
+            });
             return {
               id: gj.id,
+              templateId: gj.jobTemplateId,
               name: gj.overrideName ?? gj.jobTemplate.name,
               slotsNeeded: gj.slotsNeeded,
-              filled: allNames.length,
+              filled: allVols.length,
               isPublic: gj.isPublic,
+              disabled: gj.disabled,
               scope: gj.jobTemplate.scope,
-              volunteerNames: allNames,
+              volunteers: allVols,
             };
           }),
         }))}
@@ -299,7 +325,7 @@ export default async function TeamDetailPage({ params }: Props) {
             subFacilities: f.subFacilities,
           })),
           seasons,
-          canSchedule: canManageSchedule(user.role) || canManage,
+          canSchedule: canManage,
           canBump: canBumpEvents(user.role),
         }}
         jobTemplates={globalTeamTemplates.map((jt) => ({
@@ -321,6 +347,8 @@ export default async function TeamDetailPage({ params }: Props) {
         }))}
         signupStats={signupStats}
         canManage={canManage}
+        isAdmin={isOrgAdmin(user.role)}
+        userTeams={userTeamsForSchedule}
       />
     </div>
   );

@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, canManageSchedule, getUserTeamIds } from "@/lib/auth-helpers";
+import { UserRole } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { VolunteerView } from "@/components/volunteers/volunteer-view";
 
@@ -9,8 +10,12 @@ export default async function VolunteersPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  const isAdmin = user.role === UserRole.ADMIN || user.role === UserRole.SCHEDULE_MANAGER;
+  const userTeamIds = isAdmin ? [] : await getUserTeamIds(user.id);
+
   const unfilledJobs = await prisma.gameJob.findMany({
     where: {
+      disabled: false,
       jobTemplate: { scope: "FACILITY" },
       scheduleEvent: {
         team: { organizationId: user.organizationId },
@@ -61,6 +66,10 @@ export default async function VolunteersPage() {
         slotsNeeded: j.slotsNeeded,
         slotsFilled: j.assignments.length,
         isPublic: j.isPublic,
+        disabled: false as const,
+        volunteers: j.assignments
+          .filter((a) => a.name)
+          .map((a) => ({ assignmentId: a.id, name: a.name as string })),
         signups: j.assignments.map((a) => ({
           name: a.name ?? "Volunteer",
           playerName: a.playerName,
@@ -90,7 +99,12 @@ export default async function VolunteersPage() {
           Track open jobs and volunteer signups
         </p>
       </div>
-      <VolunteerView jobs={jobs} />
+      <VolunteerView
+        jobs={jobs}
+        canManage={canManageSchedule(user.role)}
+        isAdmin={isAdmin}
+        userTeamIds={userTeamIds}
+      />
     </div>
   );
 }

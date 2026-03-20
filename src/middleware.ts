@@ -2,7 +2,14 @@ import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function middleware(req: NextRequest) {
-  if (req.nextUrl.pathname === "/api/invitations/accept") {
+  const pathname = req.nextUrl.pathname;
+
+  if (pathname === "/api/invitations/accept") {
+    return NextResponse.next();
+  }
+
+  /** Public schedule page + JSON/ICS APIs — never require login */
+  if (pathname === "/schedule" || pathname.startsWith("/api/schedule/")) {
     return NextResponse.next();
   }
 
@@ -20,11 +27,13 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/schedule",
     "/dashboard/:path*",
     "/api/facilities/:path*",
     "/api/teams/:path*",
     "/api/seasons/:path*",
     "/api/schedules/:path*",
+    "/api/schedule/:path*",
     "/api/volunteers/manage/:path*",
     "/api/invitations/:path*",
     "/api/coaches/:path*",

@@ -373,3 +373,71 @@ export async function sendJobCancellationNotification(opts: {
 
   await send(opts.to, `Signup cancelled: ${opts.jobName} - ${opts.eventTitle}`, html);
 }
+
+export async function sendAdminVolunteerCancellationAlert(opts: {
+  to: string;
+  recipientName: string;
+  volunteerName: string | null;
+  volunteerEmail: string | null;
+  jobName: string;
+  eventTitle: string;
+  eventDate: string;
+  location: string;
+}) {
+  const helpWantedUrl = `${APP_URL}/help-wanted`;
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">Volunteer shift cancelled</h2>
+      <p style="color:#666;margin:0 0 16px">Hi ${opts.recipientName}, a volunteer cancelled a signup.</p>
+      <div style="background:#f9f9f9;border-radius:8px;padding:16px;margin-bottom:20px">
+        <p style="margin:0 0 4px"><strong>Volunteer:</strong> ${opts.volunteerName || "Unknown"}${opts.volunteerEmail ? ` (${opts.volunteerEmail})` : ""}</p>
+        <p style="margin:0 0 4px"><strong>Job:</strong> ${opts.jobName}</p>
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px"><strong>When:</strong> ${opts.eventDate}</p>
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      <a href="${helpWantedUrl}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        Open Volunteer Signup
+      </a>
+    </div>
+  `;
+
+  await send(
+    opts.to,
+    `Shift cancelled: ${opts.jobName} — ${opts.eventTitle}`,
+    html
+  );
+}
+
+export async function sendAdminUnfilledJobsAlert(opts: {
+  to: string;
+  recipientName: string;
+  title: string;
+  intro: string;
+  lines: string[];
+}) {
+  const listHtml =
+    opts.lines.length === 0
+      ? "<p style='color:#666'>No open shifts in this window.</p>"
+      : `<ul style="margin:0;padding-left:20px;color:#333">${opts.lines.map((l) => `<li style="margin:4px 0">${l}</li>`).join("")}</ul>`;
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">${opts.title}</h2>
+      <p style="color:#666;margin:0 0 16px">${opts.intro}</p>
+      ${listHtml}
+      <p style="margin-top:20px">
+        <a href="${APP_URL}/help-wanted" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">Volunteer Signup</a>
+      </p>
+    </div>
+  `;
+
+  await send(opts.to, opts.title, html);
+}

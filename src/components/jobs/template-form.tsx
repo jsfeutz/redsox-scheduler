@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Users, Building2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 const EVENT_TYPE_OPTIONS = [
   { value: "ALL", label: "All Events" },
@@ -37,6 +38,7 @@ const templateSchema = z.object({
   forEventType: z.enum(["ALL", "GAME", "PRACTICE", "OTHER"]),
   hoursPerGame: z.string().optional(),
   maxSlots: z.string().optional(),
+  askComfortLevel: z.boolean().optional(),
 });
 
 type TemplateFormValues = z.infer<typeof templateSchema>;
@@ -49,6 +51,7 @@ export interface TemplateData {
   forEventType?: string;
   hoursPerGame: number;
   maxSlots?: number;
+  askComfortLevel?: boolean;
 }
 
 interface TemplateFormProps {
@@ -78,6 +81,7 @@ export function TemplateForm({
       forEventType: (template?.forEventType as "ALL" | "GAME" | "PRACTICE" | "OTHER") ?? "ALL",
       hoursPerGame: template?.hoursPerGame?.toString() ?? "2",
       maxSlots: template?.maxSlots?.toString() ?? "1",
+      askComfortLevel: template?.askComfortLevel ?? false,
     },
   });
 
@@ -98,6 +102,7 @@ export function TemplateForm({
         forEventType: values.forEventType,
         hoursPerGame: values.hoursPerGame ? parseFloat(values.hoursPerGame) : 2,
         maxSlots: values.maxSlots ? parseInt(values.maxSlots, 10) : 1,
+        askComfortLevel: Boolean(values.askComfortLevel),
       };
 
       const res = await fetch(apiUrl ?? defaultUrl, {
@@ -218,9 +223,25 @@ export function TemplateForm({
             />
           </div>
 
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 px-3 py-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="askComfortLevel" className="text-sm font-medium">
+                Ask comfort level on signup
+              </Label>
+              <p className="text-xs text-muted-foreground max-w-[280px]">
+                When enabled, volunteers see options like “new family” vs “comfortable without help” on the public signup form.
+              </p>
+            </div>
+            <Switch
+              id="askComfortLevel"
+              checked={Boolean(form.watch("askComfortLevel"))}
+              onCheckedChange={(v) => form.setValue("askComfortLevel", v)}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="hoursPerGame">Hours per game</Label>
+              <Label htmlFor="hoursPerGame">Hours per event</Label>
               <Input
                 id="hoursPerGame"
                 type="number"
@@ -230,7 +251,7 @@ export function TemplateForm({
                 {...form.register("hoursPerGame")}
               />
               <p className="text-xs text-muted-foreground">
-                Hours credited per game worked.
+                Hours credited per event worked.
               </p>
             </div>
             <div className="grid gap-2">

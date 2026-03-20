@@ -12,9 +12,11 @@ export async function GET() {
     where: {
       cancelledAt: null,
       gameJob: {
-        scheduleEvent: {
-          team: { organizationId: user.organizationId },
-        },
+        OR: [
+          { scheduleEvent: { team: { organizationId: user.organizationId } } },
+          { scheduleEvent: { subFacility: { facility: { organizationId: user.organizationId } } } },
+          { scheduleEventId: null, jobTemplate: { organizationId: user.organizationId } },
+        ],
       },
     },
     select: {
@@ -27,6 +29,7 @@ export async function GET() {
       user: { select: { name: true, email: true } },
       gameJob: {
         select: {
+          teamId: true,
           jobTemplate: { select: { name: true } },
           scheduleEvent: {
             select: {

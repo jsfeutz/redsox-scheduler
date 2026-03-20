@@ -2,17 +2,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   getCurrentUser,
-  canManageSchedule,
   canBumpEvents,
   getTeamFilterForUser,
   canManageTeam,
   isOrgAdmin,
+  canCreateScheduleEventViaApi,
 } from "@/lib/auth-helpers";
 import { Prisma } from "@prisma/client";
 import { RRule, Weekday } from "rrule";
 import { createAutoJobs } from "@/lib/auto-jobs";
 import { notifyScheduleChange, formatEventDate } from "@/lib/notify";
 
+/** Keep selects aligned with older DBs that may not have newer columns yet (run `prisma migrate deploy` for full features). */
 const eventInclude = {
   team: {
     select: {
@@ -30,8 +31,10 @@ const eventInclude = {
   gameJobs: {
     select: {
       id: true,
+      jobTemplateId: true,
       slotsNeeded: true,
       isPublic: true,
+      disabled: true,
       jobTemplate: { select: { name: true, scope: true } },
       assignments: {
         where: { cancelledAt: null },
@@ -48,29 +51,50 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const teamId = searchParams.get("teamId");
+  const teamIdParam = searchParams.get("teamId");
   const subFacilityId = searchParams.get("subFacilityId");
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
 
-  const where: Prisma.ScheduleEventWhereInput = {
-    cancelledByBumpId: null,
-    OR: [
-      { team: { organizationId: user.organizationId } },
-      { teamId: null, subFacility: { facility: { organizationId: user.organizationId } } },
-      { teamId: null, subFacilityId: null },
-    ],
-  };
+  let where: Prisma.ScheduleEventWhereInput;
 
-  const teamFilter = await getTeamFilterForUser(user);
-  if (teamFilter) {
-    where.OR = [
-      { ...teamFilter, team: { organizationId: user.organizationId } },
-      { type: "CLUB_EVENT" },
-    ];
+  if (teamIdParam) {
+    const teamInOrg = await prisma.team.findFirst({
+      where: { id: teamIdParam, organizationId: user.organizationId },
+      select: { id: true },
+    });
+    if (!teamInOrg) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    if (!(await canManageTeam(user, teamIdParam))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    where = {
+      cancelledByBumpId: null,
+      teamId: teamIdParam,
+    };
+  } else {
+    where = {
+      cancelledByBumpId: null,
+      OR: [
+        { team: { organizationId: user.organizationId } },
+        {
+          teamId: null,
+          subFacility: { facility: { organizationId: user.organizationId } },
+        },
+        { teamId: null, subFacilityId: null },
+      ],
+    };
+
+    const teamFilter = await getTeamFilterForUser(user);
+    if (teamFilter) {
+      where.OR = [
+        { ...teamFilter, team: { organizationId: user.organizationId } },
+        { type: "CLUB_EVENT" },
+      ];
+    }
   }
 
-  if (teamId) where.teamId = teamId;
   if (subFacilityId) where.subFacilityId = subFacilityId;
 
   if (startDate && endDate) {
@@ -82,13 +106,20 @@ export async function GET(req: Request) {
     where.startTime = { lte: new Date(endDate) };
   }
 
-  const events = await prisma.scheduleEvent.findMany({
-    where,
-    include: eventInclude,
-    orderBy: { startTime: "asc" },
-  });
-
-  return NextResponse.json(events);
+  try {
+    const events = await prisma.scheduleEvent.findMany({
+      where,
+      include: eventInclude,
+      orderBy: { startTime: "asc" },
+    });
+    return NextResponse.json(events);
+  } catch (err) {
+    console.error("[GET /api/schedules]", err);
+    return NextResponse.json(
+      { error: "Failed to load schedule" },
+      { status: 500 }
+    );
+  }
 }
 
 const JS_DAY_TO_RRULE: Record<number, Weekday> = {
@@ -208,12 +239,10 @@ async function tryPriorityBump(
 }
 
 export async function POST(req: Request) {
+  try {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!canManageSchedule(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -228,18 +257,27 @@ export async function POST(req: Request) {
     recurrenceFrequency,
     recurrenceDays,
     recurrenceUntil,
-    teamId,
+    teamId: rawTeamId,
     subFacilityId,
     seasonId,
     customLocation,
     customLocationUrl,
     gameVenue,
+    noJobs,
+    manualJobs,
     force,
     forceBlackout,
   } = body;
 
+  const teamId =
+    typeof rawTeamId === "string" && rawTeamId.trim() ? rawTeamId.trim() : null;
+
   const isClubEvent = type === "CLUB_EVENT";
   const isAwayGame = type === "GAME" && gameVenue === "AWAY";
+
+  if (!(await canCreateScheduleEventViaApi(user, type, teamId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   if (!title || !type || !startTime || !endTime) {
     return NextResponse.json(
@@ -315,6 +353,7 @@ export async function POST(req: Request) {
     customLocation: wantsCustomLoc ? customLocation?.trim() || null : null,
     customLocationUrl: wantsCustomLoc ? customLocationUrl?.trim() || null : null,
     gameVenue: type === "GAME" ? (gameVenue || "HOME") : null,
+    noJobs: !!noJobs,
   };
 
   if (isRecurring && Array.isArray(recurrenceDays) && recurrenceDays.length > 0) {
@@ -392,7 +431,20 @@ export async function POST(req: Request) {
         include: eventInclude,
       });
 
-      await createAutoJobs({ ...event, gameVenue: event.gameVenue, organizationId: user.organizationId });
+      if (!noJobs) {
+        await createAutoJobs({ ...event, gameVenue: event.gameVenue, organizationId: user.organizationId });
+      }
+      if (Array.isArray(manualJobs) && manualJobs.length > 0 && !noJobs) {
+        await prisma.gameJob.createMany({
+          data: manualJobs.map((j: { jobTemplateId: string; slotsNeeded: number }) => ({
+            scheduleEventId: event.id,
+            jobTemplateId: j.jobTemplateId,
+            slotsNeeded: j.slotsNeeded,
+            isPublic: true,
+          })),
+          skipDuplicates: true,
+        });
+      }
       createdEvents.push(event);
     }
 
@@ -446,7 +498,28 @@ export async function POST(req: Request) {
     include: eventInclude,
   });
 
-  await createAutoJobs({ ...event, gameVenue: event.gameVenue, organizationId: user.organizationId });
+  if (!noJobs) {
+    await createAutoJobs({ ...event, gameVenue: event.gameVenue, organizationId: user.organizationId });
+  }
+
+  if (Array.isArray(manualJobs) && manualJobs.length > 0 && !noJobs) {
+    await prisma.gameJob.createMany({
+      data: manualJobs.map((j: { jobTemplateId: string; slotsNeeded: number }) => ({
+        scheduleEventId: event.id,
+        jobTemplateId: j.jobTemplateId,
+        slotsNeeded: j.slotsNeeded,
+        isPublic: true,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   return NextResponse.json(event, { status: 201 });
+  } catch (err) {
+    console.error("[POST /api/schedules]", err);
+    return NextResponse.json(
+      { error: "Failed to save event" },
+      { status: 500 }
+    );
+  }
 }

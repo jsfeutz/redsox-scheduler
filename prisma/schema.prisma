@@ -69,6 +69,19 @@ enum NotificationType {
   SCHEDULE_CHANGE
   SIGNUP_CONFIRM
   CANCELLATION
+  ADMIN_ALERT
+}
+
+enum AdminNotifyEvent {
+  JOB_CANCELLATION
+  UNFILLED_JOBS_24H
+  UNFILLED_JOBS_WEEK
+}
+
+enum AdminNotifyChannel {
+  EMAIL
+  SMS
+  BOTH
 }
 
 enum NotificationChannel {
@@ -84,7 +97,7 @@ enum NotificationStatus {
 model Organization {
   id                     String   @id @default(cuid())
   name                   String
-  teamJobsCountHours     Boolean  @default(false)
+  teamJobsCountHours     Boolean  @default(true)
   teamJobsPublicSignup   Boolean  @default(true)
   requiredVolunteerHours Float    @default(0)
   primaryColor           String   @default("#dc2626")
@@ -118,15 +131,31 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization          Organization    @relation(fields: [organizationId], references: [id])
-  coachOfTeams          Team[]          @relation("HeadCoach")
-  jobAssignments        JobAssignment[]
-  teamMembers           TeamMember[]
-  slotRequestsMade      SlotRequest[]   @relation("SlotRequestsMade")
-  slotRequestsResponded SlotRequest[]   @relation("SlotRequestsResponded")
+  organization              Organization            @relation(fields: [organizationId], references: [id])
+  coachOfTeams              Team[]                  @relation("HeadCoach")
+  jobAssignments            JobAssignment[]
+  teamMembers               TeamMember[]
+  slotRequestsMade          SlotRequest[]           @relation("SlotRequestsMade")
+  slotRequestsResponded     SlotRequest[]           @relation("SlotRequestsResponded")
+  adminNotificationPrefs    AdminNotificationPref[]
 
   @@index([organizationId])
   @@index([email])
+}
+
+model AdminNotificationPref {
+  id        String             @id @default(cuid())
+  userId    String
+  event     AdminNotifyEvent
+  channel   AdminNotifyChannel @default(EMAIL)
+  enabled   Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, event])
+  @@index([userId])
 }
 
 model TeamMember {
@@ -298,6 +327,7 @@ model ScheduleEvent {
   customLocation    String?
   customLocationUrl String?
   gameVenue         String?
+  noJobs            Boolean       @default(false)
   cancelledByBumpId String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -317,18 +347,19 @@ model ScheduleEvent {
 }
 
 model JobTemplate {
-  id             String   @id @default(cuid())
-  name           String
-  description    String?
-  scope          JobScope
-  hoursPerGame   Float    @default(2)
-  maxSlots       Int      @default(1)
-  forEventType   String   @default("ALL")
-  active         Boolean  @default(true)
-  organizationId String
-  teamId         String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  scope            JobScope
+  hoursPerGame     Float    @default(2)
+  maxSlots         Int      @default(1)
+  forEventType     String   @default("ALL")
+  active           Boolean  @default(true)
+  askComfortLevel  Boolean  @default(false)
+  organizationId   String
+  teamId           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   organization       Organization          @relation(fields: [organizationId], references: [id])
   team               Team?                 @relation("TeamJobTemplates", fields: [teamId], references: [id], onDelete: Cascade)
@@ -365,6 +396,7 @@ model GameJob {
   overrideName         String?
   overrideDescription  String?
   overrideHoursPerGame Float?
+  disabled             Boolean  @default(false)
   createdAt            DateTime @default(now())
 
   jobTemplate   JobTemplate    @relation(fields: [jobTemplateId], references: [id])
@@ -385,6 +417,7 @@ model JobAssignment {
   email             String?
   phone             String?
   playerName        String?
+  comfortLevel      String?
   playerVolunteerId String?
   hoursEarned       Float?
   cancelToken       String   @unique @default(cuid())

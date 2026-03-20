@@ -28,7 +28,7 @@ export async function PUT(
   }
 
   const body = await req.json();
-  const { name, description, scope, forEventType, hoursPerGame, maxSlots, active } = body;
+  const { name, description, scope, forEventType, hoursPerGame, maxSlots, active, askComfortLevel } = body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json(
@@ -47,49 +47,74 @@ export async function PUT(
   }
 
   const validEventTypes = ["ALL", "GAME", "PRACTICE", "OTHER"];
-  const newForEventType = validEventTypes.includes(forEventType) ? forEventType : undefined;
+  const newForEventType =
+    typeof forEventType === "string" && validEventTypes.includes(forEventType)
+      ? forEventType
+      : undefined;
 
-  const template = await prisma.jobTemplate.update({
-    where: { id },
-    data: {
-      name: name.trim(),
-      description: description?.trim() || null,
-      scope: effectiveScope,
-      forEventType: newForEventType,
-      hoursPerGame: typeof hoursPerGame === "number" ? hoursPerGame : undefined,
-      maxSlots: typeof maxSlots === "number" && maxSlots >= 1 ? maxSlots : undefined,
-      active: typeof active === "boolean" ? active : undefined,
-    },
-    include: {
-      _count: { select: { gameJobs: true } },
-    },
-  });
-
-  // Clean up future GameJobs that no longer match the event type
-  if (newForEventType && newForEventType !== "ALL" && newForEventType !== existing.forEventType) {
-    const now = new Date();
-    const mismatchedJobs = await prisma.gameJob.findMany({
-      where: {
-        jobTemplateId: id,
-        scheduleEventId: { not: null },
-        scheduleEvent: {
-          startTime: { gte: now },
-          type: { not: newForEventType as "GAME" | "PRACTICE" | "OTHER" },
-        },
+  try {
+    const template = await prisma.jobTemplate.update({
+      where: { id },
+      data: {
+        name: name.trim(),
+        description: description?.trim() || null,
+        scope: effectiveScope,
+        ...(newForEventType !== undefined ? { forEventType: newForEventType } : {}),
+        hoursPerGame: typeof hoursPerGame === "number" ? hoursPerGame : undefined,
+        maxSlots: typeof maxSlots === "number" && maxSlots >= 1 ? maxSlots : undefined,
+        active: typeof active === "boolean" ? active : undefined,
+        askComfortLevel:
+          typeof askComfortLevel === "boolean" ? askComfortLevel : undefined,
       },
-      select: { id: true },
+      include: {
+        _count: { select: { gameJobs: true } },
+      },
     });
-    if (mismatchedJobs.length > 0) {
-      await prisma.jobAssignment.deleteMany({
-        where: { gameJobId: { in: mismatchedJobs.map((j) => j.id) } },
-      });
-      await prisma.gameJob.deleteMany({
-        where: { id: { in: mismatchedJobs.map((j) => j.id) } },
-      });
-    }
-  }
 
-  return NextResponse.json(template);
+    // Clean up future GameJobs that no longer match the event type
+    if (
+      newForEventType &&
+      newForEventType !== "ALL" &&
+      newForEventType !== existing.forEventType
+    ) {
+      const now = new Date();
+      const mismatchedJobs = await prisma.gameJob.findMany({
+        where: {
+          jobTemplateId: id,
+          scheduleEventId: { not: null },
+          scheduleEvent: {
+            startTime: { gte: now },
+            type: { not: newForEventType as "GAME" | "PRACTICE" | "OTHER" },
+          },
+        },
+        select: { id: true },
+      });
+      if (mismatchedJobs.length > 0) {
+        await prisma.jobAssignment.deleteMany({
+          where: { gameJobId: { in: mismatchedJobs.map((j) => j.id) } },
+        });
+        await prisma.gameJob.deleteMany({
+          where: { id: { in: mismatchedJobs.map((j) => j.id) } },
+        });
+      }
+    }
+
+    return NextResponse.json(template);
+  } catch (err) {
+    console.error("[templates PUT]", err);
+    const msg =
+      err instanceof Error ? err.message : "Failed to update template";
+    if (msg.includes("askComfortLevel") || msg.includes("does not exist")) {
+      return NextResponse.json(
+        {
+          error:
+            "Database is out of date. Run: npx prisma migrate deploy (or migrate dev) and restart the app.",
+        },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function DELETE(

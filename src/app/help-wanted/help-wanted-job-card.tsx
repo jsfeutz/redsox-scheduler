@@ -21,10 +21,12 @@ interface HelpWantedJobCardProps {
     assignmentCount: number;
     volunteerNames: string[];
     hoursPerGame: number;
+    askComfortLevel?: boolean;
   };
+  autoOpen?: boolean;
 }
 
-export function HelpWantedJobCard({ job }: HelpWantedJobCardProps) {
+export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
   const [assignmentCount, setAssignmentCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - assignmentCount;
@@ -80,6 +82,8 @@ export function HelpWantedJobCard({ job }: HelpWantedJobCardProps) {
               eventTitle={job.eventTitle}
               eventDate={job.date}
               eventTime={job.time}
+              autoOpen={autoOpen}
+              askComfortLevel={job.askComfortLevel}
               onSuccess={(name) => {
                 setAssignmentCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

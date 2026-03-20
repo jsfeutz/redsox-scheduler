@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, isOrgAdmin, canManageTeam } from "@/lib/auth-helpers";
+import { TeamRole } from "@prisma/client";
 
 export async function PUT(
   req: Request,
@@ -43,6 +44,28 @@ export async function PUT(
       headCoach: { select: { id: true, name: true, email: true } },
     },
   });
+
+  if (headCoachId !== undefined && headCoachId !== existing.headCoachId) {
+    if (existing.headCoachId) {
+      const oldMember = await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: id, userId: existing.headCoachId } },
+      });
+      if (oldMember && oldMember.role === TeamRole.HEAD_COACH) {
+        await prisma.teamMember.update({
+          where: { id: oldMember.id },
+          data: { role: TeamRole.ASSISTANT_COACH },
+        });
+      }
+    }
+
+    if (headCoachId) {
+      await prisma.teamMember.upsert({
+        where: { teamId_userId: { teamId: id, userId: headCoachId } },
+        create: { teamId: id, userId: headCoachId, role: TeamRole.HEAD_COACH },
+        update: { role: TeamRole.HEAD_COACH },
+      });
+    }
+  }
 
   return NextResponse.json(team);
 }

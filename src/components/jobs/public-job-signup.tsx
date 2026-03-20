@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { COMFORT_LEVEL_OPTIONS } from "@/lib/comfort-level";
 import { useVolunteerIdentity } from "@/components/providers/volunteer-identity";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
@@ -29,6 +30,9 @@ interface PublicJobSignupProps {
   eventTitle?: string;
   eventDate?: string;
   eventTime?: string;
+  autoOpen?: boolean;
+  /** When true (from job template), show comfort level on the signup form */
+  askComfortLevel?: boolean;
   onSuccess: (name?: string) => void;
 }
 
@@ -38,15 +42,26 @@ export function PublicJobSignup({
   eventTitle,
   eventDate,
   eventTime,
+  autoOpen = false,
+  askComfortLevel = false,
   onSuccess,
 }: PublicJobSignupProps) {
   const { identity, setIdentity } = useVolunteerIdentity();
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
+  const [didAutoOpen, setDidAutoOpen] = useState(false);
+
+  useEffect(() => {
+    if (autoOpen && !didAutoOpen) {
+      setOpen(true);
+      setDidAutoOpen(true);
+    }
+  }, [autoOpen, didAutoOpen]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [playerName, setPlayerName] = useState("");
+  const [comfortLevel, setComfortLevel] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -63,6 +78,10 @@ export function PublicJobSignup({
       toast.error("Please fill in all fields");
       return;
     }
+    if (askComfortLevel && !comfortLevel) {
+      toast.error("Please select your comfort level");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -75,6 +94,7 @@ export function PublicJobSignup({
           email: email.trim(),
           phone: phone.trim() || undefined,
           playerName: playerName.trim() || undefined,
+          ...(askComfortLevel && comfortLevel ? { comfortLevel } : {}),
         }),
       });
 
@@ -160,6 +180,31 @@ export function PublicJobSignup({
           Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
         </p>
       </div>
+      {askComfortLevel && (
+        <div className="grid gap-1.5">
+          <Label className="text-sm font-medium">
+            Comfort level for this role
+          </Label>
+          <div className="grid gap-2 rounded-xl border border-border/60 p-3 bg-muted/20">
+            {COMFORT_LEVEL_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className="flex items-start gap-2.5 cursor-pointer text-sm"
+              >
+                <input
+                  type="radio"
+                  name={`comfort-${jobId}`}
+                  value={opt.value}
+                  checked={comfortLevel === opt.value}
+                  onChange={() => setComfortLevel(opt.value)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid gap-1.5">
         <Label htmlFor={`job-player-${jobId}`} className="text-sm font-medium">
           Player Name

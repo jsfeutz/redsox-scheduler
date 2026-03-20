@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { format } from "date-fns";
-import { toast } from "sonner";
 import {
   AlertCircle,
   Calendar,
@@ -10,16 +9,10 @@ import {
   MapPin,
   Search,
   Users,
-  Share2,
-  Copy,
-  Check,
   ChevronDown,
-  Globe,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -28,6 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { JobSlotRow } from "@/components/jobs/job-slot-row";
+import type { JobVolunteer } from "@/components/jobs/job-slot-row";
 
 interface Signup {
   name: string;
@@ -41,6 +36,8 @@ interface UnfilledJob {
   slotsNeeded: number;
   slotsFilled: number;
   isPublic: boolean;
+  disabled: boolean;
+  volunteers: JobVolunteer[];
   signups: Signup[];
   event: {
     id: string;
@@ -69,14 +66,16 @@ interface TeamSummary {
 
 interface Props {
   jobs: UnfilledJob[];
+  canManage?: boolean;
+  isAdmin?: boolean;
+  userTeamIds?: string[];
 }
 
-export function VolunteerView({ jobs }: Props) {
+export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTeamIds = [] }: Props) {
   const [filter, setFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("ALL");
   const [activeTab, setActiveTab] = useState("teams");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const teamSummaries = useMemo(() => {
     const map = new Map<string, TeamSummary>();
@@ -131,6 +130,13 @@ export function VolunteerView({ jobs }: Props) {
 
   const totalOpenSlots = filtered.reduce((s, j) => s + (j.slotsNeeded - j.slotsFilled), 0);
 
+  function canManageJob(j: UnfilledJob): boolean {
+    if (!canManage) return false;
+    if (isAdmin) return true;
+    if (!j.event.teamId) return false;
+    return userTeamIds.includes(j.event.teamId);
+  }
+
   const filteredTeamSummaries = useMemo(() => {
     const map = new Map<string, TeamSummary>();
     for (const j of filtered) {
@@ -158,15 +164,6 @@ export function VolunteerView({ jobs }: Props) {
     }
     return Array.from(map.values()).sort((a, b) => b.openSlots - a.openSlots);
   }, [filtered]);
-
-  function copyShareLink(job: UnfilledJob) {
-    const url = `${window.location.origin}/help-wanted?job=${job.id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedId(job.id);
-      toast.success("Public signup link copied!");
-      setTimeout(() => setCopiedId(null), 2000);
-    });
-  }
 
   if (jobs.length === 0) {
     return (
@@ -363,47 +360,20 @@ export function VolunteerView({ jobs }: Props) {
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t bg-muted/20 px-3 md:px-4 py-2.5 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                          Signups ({j.slotsFilled} of {j.slotsNeeded})
-                        </p>
-                        {j.isPublic && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs gap-1"
-                            onClick={(e) => { e.stopPropagation(); copyShareLink(j); }}
-                          >
-                            {copiedId === j.id ? (
-                              <Check className="h-3 w-3 text-green-500" />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                            Copy Link
-                          </Button>
-                        )}
-                      </div>
-                      {j.signups.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {j.signups.map((s, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs font-normal">
-                              {s.name}
-                              {s.playerName && (
-                                <span className="text-muted-foreground ml-1">for {s.playerName}</span>
-                              )}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No signups yet.</p>
-                      )}
-                      {!j.isPublic && (
-                        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <Globe className="h-3 w-3" />
-                          Not public — no share link available.
-                        </p>
-                      )}
+                    <div className="border-t bg-muted/20 px-3 md:px-4 py-2.5">
+                      <JobSlotRow
+                        job={{
+                          id: j.id,
+                          name: j.jobName,
+                          slotsNeeded: j.slotsNeeded,
+                          filled: j.slotsFilled,
+                          isPublic: j.isPublic,
+                          disabled: j.disabled,
+                          scope: j.jobScope,
+                          volunteers: j.volunteers,
+                        }}
+                        canManage={canManageJob(j)}
+                      />
                     </div>
                   )}
                 </Card>

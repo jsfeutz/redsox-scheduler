@@ -34,7 +34,12 @@ export async function sendSms(
   phone: string,
   message: string,
   opts?: {
-    type?: "JOB_REMINDER" | "SCHEDULE_CHANGE" | "SIGNUP_CONFIRM" | "CANCELLATION";
+    type?:
+      | "JOB_REMINDER"
+      | "SCHEDULE_CHANGE"
+      | "SIGNUP_CONFIRM"
+      | "CANCELLATION"
+      | "ADMIN_ALERT";
     relatedEventId?: string;
     relatedJobId?: string;
     relatedAssignId?: string;

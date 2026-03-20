@@ -19,6 +19,7 @@ export default async function HelpWantedPage() {
 
   const where: Prisma.GameJobWhereInput = {
     isPublic: true,
+    disabled: false,
     scheduleEvent: { startTime: { gte: new Date() } },
   };
 
@@ -95,6 +96,7 @@ export default async function HelpWantedPage() {
         assignmentCount: job.assignments.length,
         volunteerNames: job.assignments.map((a) => a.name).filter(Boolean) as string[],
         hoursPerGame: job.overrideHoursPerGame ?? job.jobTemplate.hoursPerGame,
+        askComfortLevel: job.jobTemplate.askComfortLevel,
       };
     });
 

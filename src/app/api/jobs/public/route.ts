@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSeasonTokenExpiry } from "@/lib/token-expiry";
 import { format } from "date-fns";
 import { notifyJobSignup } from "@/lib/notify";
+import { isValidComfortLevel } from "@/lib/comfort-level";
 
 export async function GET() {
   const now = new Date();
@@ -10,13 +11,14 @@ export async function GET() {
   const jobs = await prisma.gameJob.findMany({
     where: {
       isPublic: true,
+      disabled: false,
       jobTemplate: { scope: "FACILITY" },
       scheduleEvent: {
         startTime: { gte: now },
       },
     },
     include: {
-      jobTemplate: { select: { name: true, description: true } },
+      jobTemplate: { select: { name: true, description: true, askComfortLevel: true } },
       scheduleEvent: {
         select: {
           title: true,
@@ -45,7 +47,10 @@ export async function GET() {
     slotsNeeded: job.slotsNeeded,
     assignmentsCount: job._count.assignments,
     slotsRemaining: job.slotsNeeded - job._count.assignments,
-    jobTemplate: job.jobTemplate,
+    jobTemplate: {
+      ...job.jobTemplate,
+      askComfortLevel: job.jobTemplate.askComfortLevel,
+    },
     scheduleEvent: job.scheduleEvent,
   }));
 
@@ -55,7 +60,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { gameJobId, name, email, playerName, phone } = body;
+    const { gameJobId, name, email, playerName, phone, comfortLevel } = body;
 
     if (!gameJobId || !name || !email) {
       return NextResponse.json(
@@ -67,9 +72,9 @@ export async function POST(req: Request) {
     const emailTrimmed = email.trim().toLowerCase();
 
     const job = await prisma.gameJob.findFirst({
-      where: { id: gameJobId, isPublic: true },
+      where: { id: gameJobId, isPublic: true, disabled: false },
       include: {
-        jobTemplate: { select: { hoursPerGame: true } },
+        jobTemplate: { select: { hoursPerGame: true, askComfortLevel: true } },
         _count: { select: { assignments: { where: { cancelledAt: null } } } },
       },
     });
@@ -97,6 +102,15 @@ export async function POST(req: Request) {
       );
     }
 
+    if (job.jobTemplate.askComfortLevel) {
+      if (!comfortLevel || !isValidComfortLevel(comfortLevel)) {
+        return NextResponse.json(
+          { error: "Please select your comfort level for this role" },
+          { status: 400 }
+        );
+      }
+    }
+
     const hoursEarned = job.overrideHoursPerGame ?? job.jobTemplate.hoursPerGame;
 
     const matchedVolunteer = await prisma.playerVolunteer.findFirst({
@@ -111,6 +125,10 @@ export async function POST(req: Request) {
         email: emailTrimmed,
         phone: phone?.trim() || null,
         playerName: playerName?.trim() || matchedVolunteer?.player.name || null,
+        comfortLevel:
+          job.jobTemplate.askComfortLevel && isValidComfortLevel(comfortLevel)
+            ? comfortLevel
+            : null,
         playerVolunteerId: matchedVolunteer?.id || null,
         hoursEarned,
       },

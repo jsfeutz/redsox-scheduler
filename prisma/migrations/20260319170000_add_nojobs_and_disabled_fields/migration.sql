@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "ScheduleEvent" ADD COLUMN IF NOT EXISTS "noJobs" BOOLEAN NOT NULL DEFAULT false;
+
+-- AlterTable
+ALTER TABLE "GameJob" ADD COLUMN IF NOT EXISTS "disabled" BOOLEAN NOT NULL DEFAULT false;

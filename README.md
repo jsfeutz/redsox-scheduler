@@ -118,6 +118,16 @@ aws lightsail create-container-service-deployment \
 
 **Critical:** `NEXTAUTH_URL` controls where auth redirects go. If set wrong, the login page will redirect to the wrong domain.
 
+### Database migrations (production)
+
+Every production deploy **runs migrations automatically** before the app starts. The container `CMD` is:
+
+`npx prisma migrate deploy && node scripts/seed.mjs && … && node server.js`
+
+The Docker image copies the full `prisma/` directory (including `prisma/migrations`), so **any new migration you commit is applied on the next deployment** when the new image rolls out.
+
+**Local dev:** After pulling schema changes, run `npx prisma migrate deploy` (or `migrate dev`) against your local DB. If you skip this, saves that use new columns (e.g. template “Ask comfort level”) will fail until the DB is migrated.
+
 ### Checking deployment status
 
 ```bash

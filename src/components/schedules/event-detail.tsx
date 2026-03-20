@@ -2,14 +2,6 @@
 
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,18 +35,23 @@ import {
   Ban,
 } from "lucide-react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { AddJobToEvent } from "@/components/jobs/add-job-to-event";
+import { comfortLevelLabel } from "@/lib/comfort-level";
 
 interface JobAssignmentData {
   id: string;
   name: string | null;
   playerName: string | null;
+  comfortLevel?: string | null;
 }
 
 interface GameJobData {
   id: string;
+  jobTemplateId?: string;
   slotsNeeded: number;
   isPublic: boolean;
-  jobTemplate: { name: string; scope: string };
+  jobTemplate: { name: string; scope: string; askComfortLevel?: boolean };
   assignments: JobAssignmentData[];
 }
 
@@ -114,6 +111,7 @@ export function EventDetail({
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [requestTeamId, setRequestTeamId] = useState("");
   const [requestReason, setRequestReason] = useState("");
@@ -190,6 +188,23 @@ export function EventDetail({
     }
   }
 
+  async function handleRemoveJob(jobId: string) {
+    setDeletingJobId(jobId);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json();
+        throw new Error(body.error || "Failed to remove job");
+      }
+      toast.success("Job removed");
+      onDeleted();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove job");
+    } finally {
+      setDeletingJobId(null);
+    }
+  }
+
   const otherTeams = event.teamId
     ? userTeams.filter((t) => t.id !== event.teamId)
     : [];
@@ -222,329 +237,387 @@ export function EventDetail({
     }
   }
 
-  const priorityVariant =
-    event.priority === "HIGH"
-      ? "destructive"
-      : event.priority === "LOW"
-        ? "outline"
-        : "secondary";
+  const typeLabel =
+    event.type === "GAME"
+      ? event.gameVenue === "AWAY"
+        ? "Away Game"
+        : "Home Game"
+      : event.type === "CLUB_EVENT"
+        ? "Club Event"
+        : event.type === "PRACTICE"
+          ? "Practice"
+          : event.type;
+
+  const typeColor =
+    event.type === "GAME"
+      ? event.gameVenue === "AWAY"
+        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20"
+      : event.type === "CLUB_EVENT"
+        ? "bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/20"
+        : event.type === "PRACTICE"
+          ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20"
+          : "bg-muted text-muted-foreground border-border/50";
 
   return (
-    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="sm:max-w-md">
-        <SheetHeader>
-          <div className="flex items-center gap-2">
-            {event.team && (
-              <span
-                className="h-3 w-3 rounded-full shrink-0"
-                style={{ backgroundColor: event.team.color }}
-              />
-            )}
-            <SheetTitle>{event.title}</SheetTitle>
-          </div>
-          <SheetDescription>
-            <span className="flex items-center gap-2">
-              <Badge
-                variant={event.type === "GAME" ? "default" : "secondary"}
-              >
-                {event.type === "GAME"
-                  ? (event.gameVenue === "AWAY" ? "AWAY GAME" : "HOME GAME")
-                  : event.type}
-              </Badge>
-              <Badge variant={priorityVariant}>
-                {event.priority}
-              </Badge>
-              {event.isRecurring && (
-                <Badge variant="outline">
-                  <Repeat className="mr-1 h-3 w-3" />
-                  Recurring
-                </Badge>
+    <>
+      <Dialog open={open && !showDeleteDialog} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{event.title}</DialogTitle>
+            <DialogDescription>{typeLabel}</DialogDescription>
+          </DialogHeader>
+
+          {/* Header */}
+          <div className="px-5 pt-5 pb-4 border-b border-border/50 shrink-0">
+            <div className="flex items-center gap-2 mb-2">
+              {event.team && (
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: event.team.color }}
+                />
               )}
-            </span>
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto px-4 space-y-5">
-          <div className="space-y-4">
-            {event.cancelledByBumpId && (
-              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
-                <Ban className="h-4 w-4 text-amber-600 shrink-0" />
-                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-                  This event was bumped by a higher-priority team
-                </p>
-              </div>
-            )}
-
-            <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-sm font-medium">
-                  {format(start, "EEEE, MMMM d, yyyy")}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {format(start, "h:mm a")} &ndash; {format(end, "h:mm a")}
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold truncate">{event.title}</h2>
             </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", typeColor)}>
+                {typeLabel}
+              </span>
+              {event.priority === "HIGH" && (
+                <Badge variant="destructive" className="text-[10px]">High Priority</Badge>
+              )}
+              {event.isRecurring && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground">
+                  <Repeat className="h-3 w-3" />
+                  Recurring
+                </span>
+              )}
+            </div>
+          </div>
 
-            {event.team && (
-              <div className="flex items-start gap-3">
-                <Users className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">{event.team.name}</p>
-                  <p className="text-xs text-muted-foreground">Team</p>
+          {/* Scrollable body */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="px-5 py-4 space-y-3">
+              {event.cancelledByBumpId && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2">
+                  <Ban className="h-4 w-4 text-amber-600 shrink-0" />
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                    This event was bumped by a higher-priority team
+                  </p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {event.subFacility ? (
-              <div className="flex items-start gap-3">
-                <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
                 <div>
                   <p className="text-sm font-medium">
-                    {event.subFacility.facility.name}
+                    {format(start, "EEE, MMM d, yyyy")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {event.subFacility.name}
+                    {format(start, "h:mm a")} &ndash; {format(end, "h:mm a")}
                   </p>
-                  {event.subFacility.facility.googleMapsUrl && (
-                    <a
-                      href={event.subFacility.facility.googleMapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Directions
-                    </a>
-                  )}
                 </div>
               </div>
-            ) : event.customLocation ? (
-              <div className="flex items-start gap-3">
-                <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">{event.customLocation}</p>
-                  {event.customLocationUrl && (
-                    <a
-                      href={event.customLocationUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Directions
-                    </a>
-                  )}
-                </div>
-              </div>
-            ) : null}
 
-            {event.notes && (
-              <div className="flex items-start gap-3">
-                <FileText className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-sm whitespace-pre-wrap">{event.notes}</p>
+              {event.team && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium">{event.team.name}</p>
                 </div>
-              </div>
-            )}
+              )}
 
-            {event.isRecurring && event.recurrenceRule && (
-              <div className="flex items-start gap-3">
-                <Repeat className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-                <div>
-                  <p className="text-sm font-medium">Recurrence</p>
+              {event.subFacility ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {event.subFacility.facility.name} &ndash; {event.subFacility.name}
+                    </p>
+                    {event.subFacility.facility.googleMapsUrl && (
+                      <a
+                        href={event.subFacility.facility.googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Directions
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : event.customLocation ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{event.customLocation}</p>
+                    {event.customLocationUrl && (
+                      <a
+                        href={event.customLocationUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Directions
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {event.notes && (
+                <div className="flex items-start gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap pt-1.5">{event.notes}</p>
+                </div>
+              )}
+
+              {event.isRecurring && event.recurrenceRule && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <Repeat className="h-4 w-4 text-muted-foreground" />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {event.recurrenceRule}
                   </p>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Volunteer Jobs */}
-          {(event.gameJobs?.length ?? 0) >= 0 && (
-            <div className="border-t border-border/50 pt-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" />
-                  Volunteer Jobs
-                </h4>
-                {canManage && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[11px] px-2"
-                      onClick={() => handleSyncJobs("single")}
-                      disabled={syncing}
-                    >
-                      {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sync Jobs"}
-                    </Button>
-                    {event.isRecurring && event.recurrenceGroupId && (
+            {/* Volunteer Jobs */}
+            {(event.gameJobs?.length ?? 0) >= 0 && (
+              <div className="px-5 py-4 border-t border-border/50">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5" />
+                    Volunteer Jobs
+                  </h4>
+                  {canManage && (
+                    <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-6 text-[11px] px-2"
-                        onClick={() => handleSyncJobs("series")}
+                        onClick={() => handleSyncJobs("single")}
                         disabled={syncing}
                       >
-                        {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sync Series"}
+                        {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sync Jobs"}
                       </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2.5">
-                {(!event.gameJobs || event.gameJobs.length === 0) && (
-                  <p className="text-xs text-muted-foreground py-2">
-                    No volunteer jobs assigned. Use "Sync Jobs" to add jobs from templates.
-                  </p>
-                )}
-                {(event.gameJobs ?? []).map((job) => {
-                  const open = job.slotsNeeded - job.assignments.length;
-                  return (
-                    <div key={job.id} className="rounded-lg border bg-muted/30 p-2.5">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5">
+                      {event.isRecurring && event.recurrenceGroupId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[11px] px-2"
+                          onClick={() => handleSyncJobs("series")}
+                          disabled={syncing}
+                        >
+                          {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sync Series"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {(!event.gameJobs || event.gameJobs.length === 0) && (
+                    <p className="text-xs text-muted-foreground py-1">
+                      No volunteer jobs yet.
+                    </p>
+                  )}
+                  {(event.gameJobs ?? []).map((job) => {
+                    const openSlots = job.slotsNeeded - job.assignments.length;
+                    const hasAssignments = job.assignments.length > 0;
+                    return (
+                      <div key={job.id} className="rounded-lg border bg-muted/30 p-2.5">
+                        <div className="flex items-center justify-between">
                           <span className="text-sm font-medium">
                             {job.jobTemplate.name}
                           </span>
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                            {job.jobTemplate.scope}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-xs font-semibold tabular-nums",
+                              openSlots > 0
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-green-600 dark:text-green-400"
+                            )}>
+                              {job.assignments.length}/{job.slotsNeeded}
+                            </span>
+                            {canManage && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveJob(job.id)}
+                                disabled={hasAssignments || deletingJobId === job.id}
+                                title={hasAssignments ? "Unassign all volunteers first" : "Remove job"}
+                                className={cn(
+                                  "h-6 w-6 rounded flex items-center justify-center transition-colors",
+                                  hasAssignments
+                                    ? "text-muted-foreground/30 cursor-not-allowed"
+                                    : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                )}
+                              >
+                                {deletingJobId === job.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3 w-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <span className={`text-xs font-medium ${open > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                          {job.assignments.length}/{job.slotsNeeded}
-                        </span>
+                        {hasAssignments && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {job.assignments.map((a) => {
+                              const cl = comfortLevelLabel(a.comfortLevel);
+                              return (
+                                <Badge
+                                  key={a.id}
+                                  variant="secondary"
+                                  className="text-[11px] font-normal"
+                                >
+                                  {a.name || "Volunteer"}
+                                  {a.playerName && (
+                                    <span className="text-muted-foreground ml-1">
+                                      for {a.playerName}
+                                    </span>
+                                  )}
+                                  {cl && (
+                                    <span className="text-muted-foreground ml-1 border-l border-border/60 pl-1">
+                                      {cl}
+                                    </span>
+                                  )}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {openSlots > 0 && (
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            {openSlots} more needed
+                          </p>
+                        )}
                       </div>
-                      {job.assignments.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {job.assignments.map((a) => (
-                            <Badge
-                              key={a.id}
-                              variant="secondary"
-                              className="text-[11px] font-normal"
-                            >
-                              {a.name || "Volunteer"}
-                              {a.playerName && (
-                                <span className="text-muted-foreground ml-1">
-                                  for {a.playerName}
-                                </span>
-                              )}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                      {open > 0 && (
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          {open} more needed
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Request This Slot section */}
-          {otherTeams.length > 0 && (
-            <div className="border-t border-border/50 pt-4">
-              {!showRequestForm ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowRequestForm(true)}
-                >
-                  <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
-                  Request This Time Slot
-                </Button>
-              ) : (
-                <div className="space-y-3">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Request Time Slot Transfer
-                  </Label>
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Your Team</Label>
-                    <Select
-                      value={requestTeamId || "__none__"}
-                      onValueChange={(v) => setRequestTeamId(!v || v === "__none__" ? "" : v)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select your team" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Select your team</SelectItem>
-                        {otherTeams.map((t) => (
-                          <SelectItem key={t.id} value={t.id} label={t.name}>
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-full mr-1.5"
-                              style={{ backgroundColor: t.color }}
-                            />
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Reason (optional)</Label>
-                    <Textarea
-                      placeholder="Why do you need this slot?"
-                      value={requestReason}
-                      onChange={(e) => setRequestReason(e.target.value)}
-                      rows={2}
+                    );
+                  })}
+                  {canManage && (
+                    <AddJobToEvent
+                      scheduleEventId={event.id}
+                      existingTemplateIds={(event.gameJobs ?? [])
+                        .map((j) => j.jobTemplateId)
+                        .filter(Boolean) as string[]}
+                      onAdded={onDeleted}
                     />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setShowRequestForm(false);
-                        setRequestTeamId("");
-                        setRequestReason("");
-                      }}
-                      className="flex-1"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleRequestSlot}
-                      disabled={requesting || !requestTeamId}
-                      className="flex-1"
-                    >
-                      {requesting ? "Sending..." : "Send Request"}
-                    </Button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
 
-        {canManage && (
-          <SheetFooter className="flex-col gap-2 sm:flex-col">
-            <div className="flex gap-2 w-full">
-              <Button variant="outline" onClick={onEdit} className="flex-1">
+            {/* Request This Slot */}
+            {otherTeams.length > 0 && (
+              <div className="px-5 py-4 border-t border-border/50">
+                {!showRequestForm ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowRequestForm(true)}
+                  >
+                    <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                    Request This Time Slot
+                  </Button>
+                ) : (
+                  <div className="space-y-3">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Request Time Slot Transfer
+                    </Label>
+                    <div className="grid gap-2">
+                      <Label className="text-sm">Your Team</Label>
+                      <Select
+                        value={requestTeamId || "__none__"}
+                        onValueChange={(v) => setRequestTeamId(!v || v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select your team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" label="Select your team">Select your team</SelectItem>
+                          {otherTeams.map((t) => (
+                            <SelectItem key={t.id} value={t.id} label={t.name}>
+                              <span
+                                className="inline-block h-2.5 w-2.5 rounded-full mr-1.5"
+                                style={{ backgroundColor: t.color }}
+                              />
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-sm">Reason (optional)</Label>
+                      <Textarea
+                        placeholder="Why do you need this slot?"
+                        value={requestReason}
+                        onChange={(e) => setRequestReason(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowRequestForm(false);
+                          setRequestTeamId("");
+                          setRequestReason("");
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleRequestSlot}
+                        disabled={requesting || !requestTeamId}
+                        className="flex-1"
+                      >
+                        {requesting ? "Sending..." : "Send Request"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer actions */}
+          {canManage && (
+            <div className="shrink-0 border-t border-border/50 px-5 py-3 flex gap-2">
+              <Button variant="outline" onClick={onEdit} className="flex-1 h-9">
                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                 Edit
               </Button>
               <Button
                 variant="destructive"
                 onClick={() => setShowDeleteDialog(true)}
-                className="flex-1"
+                className="flex-1 h-9"
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                 Delete
               </Button>
             </div>
-          </SheetFooter>
-        )}
-      </SheetContent>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent className="sm:max-w-md">
@@ -624,6 +697,6 @@ export function EventDetail({
           )}
         </DialogContent>
       </Dialog>
-    </Sheet>
+    </>
   );
 }

@@ -8,7 +8,6 @@ import {
   startOfWeek,
   endOfWeek,
   startOfDay,
-  endOfDay,
   eachDayOfInterval,
   isSameMonth,
   isSameDay,
@@ -17,11 +16,8 @@ import {
   subMonths,
   addWeeks,
   subWeeks,
-  addDays,
-  subDays,
   parseISO,
   isPast,
-  differenceInMinutes,
 } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -37,12 +33,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
   CalendarDays,
-  Download,
   List,
   MapPin,
   Clock,
@@ -51,13 +47,12 @@ import {
   Hand,
   ExternalLink,
   X,
-  Copy,
-  Check,
-  Rss,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 import { googleCalendarUrl } from "@/lib/calendar";
 import { PublicJobSignup } from "@/components/jobs/public-job-signup";
+import { CalendarSubscribeButton } from "@/components/schedules/calendar-subscribe-button";
 import { PublicFooter } from "@/components/public-footer";
 
 interface Team {
@@ -89,6 +84,7 @@ interface Job {
   name: string;
   slotsNeeded: number;
   filled: number;
+  askComfortLevel?: boolean;
   volunteers: Volunteer[];
 }
 
@@ -122,22 +118,44 @@ const EVENT_TYPES = [
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function publicEventTypeLabel(event: PublicEvent) {
+  if (event.type === "GAME")
+    return event.gameVenue === "AWAY" ? "Away Game" : "Home Game";
+  if (event.type === "PRACTICE") return "Practice";
+  if (event.type === "CLUB_EVENT") return "Club Event";
+  return "Other";
+}
+
+function publicEventSearchHaystack(event: PublicEvent): string {
+  return [
+    event.title,
+    event.team.name,
+    event.team.headCoach?.name ?? "",
+    publicEventTypeLabel(event),
+    event.facility ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 export function PublicSchedule({ teams, facilities }: Props) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">("month");
+  const [viewMode, setViewMode] = useState<"month" | "week" | "agenda">("month");
   const [filterTeamId, setFilterTeamId] = useState("");
   const [filterType, setFilterType] = useState("");
-  const [showAway, setShowAway] = useState(false);
+  /** Default on so guests see full schedule; turn off to hide away games only. */
+  const [showAway, setShowAway] = useState(true);
   const [events, setEvents] = useState<PublicEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<PublicEvent | null>(null);
+  const [agendaSearch, setAgendaSearch] = useState("");
 
-  const getDateRange = useCallback(() => {
+  const getDateRange = useCallback((): {
+    start: Date | null;
+    end: Date | null;
+  } => {
     if (viewMode === "agenda") {
-      return { start: startOfDay(currentDate), end: endOfDay(addDays(currentDate, 13)) };
-    }
-    if (viewMode === "day") {
-      return { start: startOfDay(currentDate), end: endOfDay(currentDate) };
+      return { start: null, end: null };
     }
     if (viewMode === "month") {
       const ms = startOfMonth(currentDate);
@@ -150,16 +168,29 @@ export function PublicSchedule({ teams, facilities }: Props) {
     setLoading(true);
     try {
       const { start, end } = getDateRange();
-      const params = new URLSearchParams({
-        startDate: start.toISOString(),
-        endDate: end.toISOString(),
-      });
+      const params = new URLSearchParams();
+      if (start && end) {
+        params.set("startDate", start.toISOString());
+        params.set("endDate", end.toISOString());
+      }
       if (filterTeamId) params.set("teamId", filterTeamId);
       if (filterType) params.set("type", filterType);
-      if (showAway) params.set("showAway", "true");
+      params.set("showAway", showAway ? "true" : "false");
 
-      const res = await fetch(`/api/schedule/public?${params}`);
-      if (res.ok) setEvents(await res.json());
+      const res = await fetch(`/api/schedule/public?${params}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as PublicEvent[];
+        setEvents(Array.isArray(data) ? data : []);
+      } else {
+        console.error(
+          "[PublicSchedule] /api/schedule/public failed",
+          res.status,
+          await res.text()
+        );
+        setEvents([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -170,40 +201,67 @@ export function PublicSchedule({ teams, facilities }: Props) {
   }, [fetchEvents]);
 
   function navigatePrev() {
+    if (viewMode === "agenda") return;
     setCurrentDate((p) => {
       if (viewMode === "month") return subMonths(p, 1);
       if (viewMode === "week") return subWeeks(p, 1);
-      if (viewMode === "day") return subDays(p, 1);
-      return subDays(p, 14);
+      return p;
     });
   }
   function navigateNext() {
+    if (viewMode === "agenda") return;
     setCurrentDate((p) => {
       if (viewMode === "month") return addMonths(p, 1);
       if (viewMode === "week") return addWeeks(p, 1);
-      if (viewMode === "day") return addDays(p, 1);
-      return addDays(p, 14);
+      return p;
     });
   }
 
   const headerLabel = useMemo(() => {
     if (viewMode === "month") return format(currentDate, "MMMM yyyy");
     if (viewMode === "week") return `${format(startOfWeek(currentDate), "MMM d")} – ${format(endOfWeek(currentDate), "MMM d, yyyy")}`;
-    if (viewMode === "day") return format(currentDate, "EEEE, MMMM d, yyyy");
-    return `${format(currentDate, "MMM d")} – ${format(addDays(currentDate, 13), "MMM d, yyyy")}`;
+    return "Agenda";
   }, [viewMode, currentDate]);
 
   const { start: rangeStart, end: rangeEnd } = getDateRange();
-  const days = (viewMode === "month" || viewMode === "week")
-    ? eachDayOfInterval({ start: rangeStart, end: rangeEnd })
-    : [];
+  const days =
+    (viewMode === "month" || viewMode === "week") && rangeStart && rangeEnd
+      ? eachDayOfInterval({ start: rangeStart, end: rangeEnd })
+      : [];
 
-  const agendaDays = viewMode === "agenda"
-    ? eachDayOfInterval({ start: rangeStart, end: rangeEnd })
-    : [];
+  const agendaDays = (() => {
+    if (viewMode !== "agenda") return [];
+    if (events.length === 0) return [];
+    const sorted = [...events].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime)
+    );
+    const first = startOfDay(parseISO(sorted[0].startTime));
+    const last = startOfDay(parseISO(sorted[sorted.length - 1].startTime));
+    return eachDayOfInterval({ start: first, end: last });
+  })();
 
   const getEventsForDay = (day: Date) =>
     events.filter((e) => isSameDay(parseISO(e.startTime), day));
+
+  const agendaSearchWords = useMemo(
+    () => agendaSearch.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [agendaSearch]
+  );
+
+  const publicEventMatchesAgendaSearch = useMemo(() => {
+    return (event: PublicEvent) => {
+      if (agendaSearchWords.length === 0) return true;
+      const haystack = publicEventSearchHaystack(event);
+      return agendaSearchWords.every((w) => haystack.includes(w));
+    };
+  }, [agendaSearchWords]);
+
+  const agendaEventsForDay = (day: Date) =>
+    getEventsForDay(day).filter(publicEventMatchesAgendaSearch);
+
+  const agendaHasVisibleContent =
+    viewMode === "agenda" &&
+    agendaDays.some((d) => agendaEventsForDay(d).length > 0);
 
   const icalUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -211,10 +269,6 @@ export function PublicSchedule({ teams, facilities }: Props) {
     if (filterType) params.set("type", filterType);
     return `/api/schedule/public/ical?${params}`;
   }, [filterTeamId, filterType]);
-
-  const DAY_START_HOUR = 6;
-  const DAY_END_HOUR = 22;
-  const dayHours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i);
 
   return (
     <div className="min-h-dvh bg-background">
@@ -245,27 +299,32 @@ export function PublicSchedule({ teams, facilities }: Props) {
                 <Hand className="h-4 w-4" />
                 Volunteer Signup
               </Link>
-              <SubscribeButton icalPath={icalUrl} />
+              <CalendarSubscribeButton
+                icalPath={icalUrl}
+                triggerClassName="rounded-xl h-auto py-2.5 px-4 border-border/50 bg-card"
+              />
             </div>
           </div>
 
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" onClick={navigatePrev}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentDate(new Date())}
-              >
-                Today
-              </Button>
-              <Button variant="outline" size="icon" onClick={navigateNext}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            {viewMode !== "agenda" && (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" onClick={navigatePrev}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentDate(new Date())}
+                >
+                  Today
+                </Button>
+                <Button variant="outline" size="icon" onClick={navigateNext}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
 
             <h2 className="text-base sm:text-lg font-semibold min-w-0 truncate">
               {headerLabel}
@@ -335,7 +394,7 @@ export function PublicSchedule({ teams, facilities }: Props) {
               <Tabs
                 value={viewMode}
                 onValueChange={(v) => {
-                  if (v) setViewMode(v as "month" | "week" | "day" | "agenda");
+                  if (v) setViewMode(v as "month" | "week" | "agenda");
                 }}
               >
                 <TabsList>
@@ -346,10 +405,6 @@ export function PublicSchedule({ teams, facilities }: Props) {
                   <TabsTrigger value="week">
                     <CalendarDays className="h-4 w-4 sm:mr-1" />
                     <span className="hidden sm:inline">Week</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="day">
-                    <Clock className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Day</span>
                   </TabsTrigger>
                   <TabsTrigger value="agenda">
                     <List className="h-4 w-4 sm:mr-1" />
@@ -456,64 +511,25 @@ export function PublicSchedule({ teams, facilities }: Props) {
             </div>
           )}
 
-          {/* Day view */}
-          {viewMode === "day" && (
-            <div className="rounded-lg border bg-card overflow-hidden">
-              <div className="relative" style={{ minHeight: `${(DAY_END_HOUR - DAY_START_HOUR) * 64}px` }}>
-                {dayHours.map((hour) => (
-                  <div
-                    key={hour}
-                    className="absolute left-0 right-0 border-b border-border/40"
-                    style={{ top: `${(hour - DAY_START_HOUR) * 64}px`, height: 64 }}
-                  >
-                    <span className="absolute -top-2.5 left-2 text-[11px] text-muted-foreground bg-card px-1">
-                      {format(new Date(2000, 0, 1, hour), "h a")}
-                    </span>
-                  </div>
-                ))}
-                <div className="ml-16 mr-2 relative">
-                  {events
-                    .filter((e) => isSameDay(parseISO(e.startTime), currentDate))
-                    .map((event) => {
-                      const start = parseISO(event.startTime);
-                      const end = parseISO(event.endTime);
-                      const startMin = start.getHours() * 60 + start.getMinutes();
-                      const durationMin = Math.max(differenceInMinutes(end, start), 30);
-                      const top = ((startMin - DAY_START_HOUR * 60) / 60) * 64;
-                      const height = (durationMin / 60) * 64;
-                      const typeLabel = event.type === "GAME" ? (event.gameVenue === "AWAY" ? "Away Game" : "Home Game") : event.type === "PRACTICE" ? "Practice" : event.type === "CLUB_EVENT" ? "Club Event" : "Other";
-
-                      return (
-                        <button
-                          key={event.id}
-                          className="absolute left-0 right-0 rounded-lg px-3 py-1.5 text-left text-white text-sm font-medium overflow-hidden hover:opacity-90 transition-opacity shadow-sm"
-                          style={{ top: Math.max(top, 0), height: Math.max(height, 28), backgroundColor: event.team.color }}
-                          onClick={() => setSelectedEvent(event)}
-                        >
-                          <div className="truncate font-semibold text-xs">
-                            {format(start, "h:mm a")} – {format(end, "h:mm a")}
-                          </div>
-                          <div className="truncate text-xs opacity-90">
-                            {event.team.name} · {typeLabel}: {event.title}
-                          </div>
-                          {event.facility && height > 50 && (
-                            <div className="truncate text-[11px] opacity-75">
-                              {event.facility}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Agenda view */}
           {viewMode === "agenda" && (
+            <div className="space-y-2">
+              <div className="relative w-full">
+                <Search
+                  className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                  aria-hidden
+                />
+                <Input
+                  value={agendaSearch}
+                  onChange={(e) => setAgendaSearch(e.target.value)}
+                  placeholder="Search agenda (title, team, location, type…)"
+                  className="h-9 pl-9 text-sm"
+                  aria-label="Search agenda events"
+                />
+              </div>
             <div className="rounded-lg border bg-card overflow-hidden divide-y">
               {agendaDays.map((day) => {
-                const dayEvts = getEventsForDay(day);
+                const dayEvts = agendaEventsForDay(day);
                 if (dayEvts.length === 0) return null;
                 const today = isToday(day);
                 return (
@@ -578,11 +594,14 @@ export function PublicSchedule({ teams, facilities }: Props) {
                   </div>
                 );
               })}
-              {!loading && agendaDays.every((d) => getEventsForDay(d).length === 0) && (
-                <div className="py-12 text-center text-muted-foreground text-sm">
-                  No events in this 2-week period.
+              {!loading && !agendaHasVisibleContent && (
+                <div className="py-12 text-center text-muted-foreground text-sm px-4">
+                  {agendaSearchWords.length > 0
+                    ? "No events match your search."
+                    : "No events found for the current filters."}
                 </div>
               )}
+            </div>
             </div>
           )}
 
@@ -637,94 +656,6 @@ export function PublicSchedule({ teams, facilities }: Props) {
           <PublicFooter />
         </div>
       </div>
-    </div>
-  );
-}
-
-function SubscribeButton({ icalPath }: { icalPath: string }) {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const httpUrl = `${origin}${icalPath}`;
-  const webcalUrl = httpUrl.replace(/^https?:/, "webcal:");
-  const gcalSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
-
-  function copyUrl() {
-    navigator.clipboard.writeText(httpUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-2.5 text-sm font-medium hover:bg-accent/50 transition-colors"
-      >
-        <Rss className="h-4 w-4" />
-        Subscribe
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-[calc(100vw-2rem)] sm:w-[340px] max-w-[340px] rounded-xl border bg-card shadow-lg p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
-            <div>
-              <h3 className="font-semibold text-sm mb-1">Subscribe to Calendar</h3>
-              <p className="text-xs text-muted-foreground">
-                Add this live feed to your calendar app. Events auto-update.
-              </p>
-            </div>
-
-            <a
-              href={gcalSubscribeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-accent/50 transition-colors w-full"
-            >
-              <ExternalLink className="h-4 w-4 text-muted-foreground" />
-              Add to Google Calendar
-            </a>
-
-            <a
-              href={webcalUrl}
-              className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium hover:bg-accent/50 transition-colors w-full"
-            >
-              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-              Open in Calendar App
-            </a>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Feed URL</label>
-              <div className="flex gap-1.5">
-                <input
-                  readOnly
-                  value={httpUrl}
-                  className="flex-1 rounded-lg border bg-muted/50 px-2.5 py-1.5 text-xs font-mono select-all min-w-0"
-                  onFocus={(e) => e.target.select()}
-                />
-                <button
-                  onClick={copyUrl}
-                  className="shrink-0 rounded-lg border px-2.5 py-1.5 hover:bg-accent/50 transition-colors"
-                  title="Copy URL"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            <a
-              href={icalPath}
-              download
-              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download .ics file instead
-            </a>
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -964,6 +895,7 @@ function EventDetailModal({
                             eventTitle={event.title}
                             eventDate={format(parseISO(event.startTime), "EEE, MMM d")}
                             eventTime={`${format(parseISO(event.startTime), "h:mm a")} – ${format(parseISO(event.endTime), "h:mm a")}`}
+                            askComfortLevel={job.askComfortLevel}
                             onSuccess={() => handleJobSignupSuccess(job.id)}
                           />
                         )}

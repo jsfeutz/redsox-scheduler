@@ -71,6 +71,7 @@ interface TemplateData {
   hoursPerGame: number;
   maxSlots: number;
   active: boolean;
+  askComfortLevel?: boolean;
   organizationId: string;
   _count: { gameJobs: number };
 }
@@ -859,7 +860,7 @@ function JobTemplatesTable({
                   <th className="text-left px-4 py-2.5">Name</th>
                   <th className="text-left px-4 py-2.5">Scope</th>
                   <th className="text-left px-3 py-2.5">For</th>
-                  <th className="text-center px-3 py-2.5">Hours</th>
+                  <th className="text-center px-3 py-2.5">Hrs/event</th>
                   <th className="text-center px-3 py-2.5">Max</th>
                   <th className="text-center px-3 py-2.5">Used</th>
                   <th className="text-center px-3 py-2.5">Status</th>
@@ -1159,6 +1160,7 @@ function ToggleActiveButton({ template }: { template: TemplateData }) {
             scope: template.scope,
             hoursPerGame: template.hoursPerGame,
             active: true,
+            askComfortLevel: template.askComfortLevel ?? false,
           }),
         });
         if (!res.ok) throw new Error("Failed to activate");

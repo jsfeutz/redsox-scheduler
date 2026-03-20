@@ -8,7 +8,41 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Loader2, User, Lock, MessageSquare } from "lucide-react";
+import { Loader2, User, Lock, MessageSquare, Bell } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const ADMIN_NOTIFY_EVENTS = [
+  {
+    event: "JOB_CANCELLATION",
+    label: "Job cancellations",
+    description:
+      "When a volunteer cancels a shift (e.g. via the link in their confirmation email).",
+  },
+  {
+    event: "UNFILLED_JOBS_24H",
+    label: "Unfilled jobs (24 hours before)",
+    description:
+      "Alert when a public shift is still open about 24 hours before the event starts.",
+  },
+  {
+    event: "UNFILLED_JOBS_WEEK",
+    label: "Unfilled jobs (weekly digest)",
+    description:
+      "Every Monday, a summary of open public shifts in the next 7 days (requires a scheduled cron).",
+  },
+] as const;
+
+type NotifyChannel = "EMAIL" | "SMS" | "BOTH";
+
+function canEditAdminNotifications(role: string | undefined) {
+  return role === "ADMIN" || role === "SCHEDULE_MANAGER";
+}
 
 export default function ProfilePage() {
   const { data: session, update: updateSession } = useSession();
@@ -22,6 +56,10 @@ export default function ProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [notifState, setNotifState] = useState<
+    Record<string, { enabled: boolean; channel: NotifyChannel }>
+  >({});
+  const [savingNotif, setSavingNotif] = useState(false);
 
   useEffect(() => {
     fetch("/api/profile")
@@ -31,6 +69,17 @@ export default function ProfilePage() {
         if (data.email) setEmail(data.email);
         if (data.phone) setPhone(data.phone);
         if (data.smsEnabled !== undefined) setSmsEnabled(data.smsEnabled);
+        const next: Record<string, { enabled: boolean; channel: NotifyChannel }> = {};
+        for (const row of ADMIN_NOTIFY_EVENTS) {
+          const found = (data.adminNotificationPrefs as { event: string; channel: string; enabled: boolean }[] | undefined)?.find(
+            (p) => p.event === row.event
+          );
+          next[row.event] = {
+            enabled: found?.enabled ?? false,
+            channel: (found?.channel as NotifyChannel) || "EMAIL",
+          };
+        }
+        setNotifState(next);
         setLoaded(true);
       })
       .catch(() => toast.error("Failed to load profile"));
@@ -56,6 +105,33 @@ export default function ProfilePage() {
       toast.error("Something went wrong");
     } finally {
       setSavingProfile(false);
+    }
+  }
+
+  async function handleSaveNotifications() {
+    if (!canEditAdminNotifications(session?.user?.role)) return;
+    setSavingNotif(true);
+    try {
+      const notificationPrefs = ADMIN_NOTIFY_EVENTS.map((row) => ({
+        event: row.event,
+        enabled: notifState[row.event]?.enabled ?? false,
+        channel: notifState[row.event]?.channel ?? "EMAIL",
+      }));
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notificationPrefs }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save notification preferences");
+        return;
+      }
+      toast.success("Notification preferences saved");
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSavingNotif(false);
     }
   }
 
@@ -220,6 +296,88 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {canEditAdminNotifications(session?.user?.role) && (
+        <Card className="rounded-2xl border-border/50">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
+                <Bell className="h-5 w-5 text-violet-500" />
+              </div>
+              <CardTitle className="text-base">Admin notifications</CardTitle>
+            </div>
+            <p className="text-xs text-muted-foreground pl-[52px] -mt-2">
+              Choose how you want to be notified about volunteer staffing. SMS uses your phone number above and respects the SMS toggle.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {ADMIN_NOTIFY_EVENTS.map((row) => (
+              <div
+                key={row.event}
+                className="rounded-xl border border-border/50 p-3 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{row.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {row.description}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={notifState[row.event]?.enabled ?? false}
+                    onCheckedChange={(checked) =>
+                      setNotifState((s) => ({
+                        ...s,
+                        [row.event]: {
+                          enabled: checked,
+                          channel: s[row.event]?.channel ?? "EMAIL",
+                        },
+                      }))
+                    }
+                  />
+                </div>
+                {(notifState[row.event]?.enabled ?? false) && (
+                  <div className="grid gap-1.5 pt-1">
+                    <Label className="text-xs">Delivery</Label>
+                    <Select
+                      value={notifState[row.event]?.channel ?? "EMAIL"}
+                      onValueChange={(v) =>
+                        setNotifState((s) => ({
+                          ...s,
+                          [row.event]: {
+                            enabled: s[row.event]?.enabled ?? true,
+                            channel: (v as NotifyChannel) || "EMAIL",
+                          },
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-9 rounded-xl text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EMAIL">Email only</SelectItem>
+                        <SelectItem value="SMS">Text only</SelectItem>
+                        <SelectItem value="BOTH">Email and text</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            ))}
+            <Button
+              type="button"
+              onClick={handleSaveNotifications}
+              disabled={savingNotif}
+              className="rounded-xl"
+            >
+              {savingNotif && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Save notification preferences
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="rounded-2xl border-border/50">
         <CardHeader className="pb-4">

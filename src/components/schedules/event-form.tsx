@@ -30,8 +30,62 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ConflictDialog, type ConflictData } from "./conflict-dialog";
+import { Plus, Minus, X, ChevronDown } from "lucide-react";
+
+/** Default new/edit times: 6:00 PM start, 1h 45m duration (7:45 PM end). */
+const DEFAULT_EVENT_START = "18:00";
+const DEFAULT_DURATION_MINUTES = 105; // 1 hr 45 min
+
+const DURATION_PRESETS = [
+  { key: "45", label: "45 min", minutes: 45 },
+  { key: "60", label: "1 hr", minutes: 60 },
+  { key: "90", label: "1:30", minutes: 90 },
+  { key: "105", label: "1:45", minutes: 105 },
+  { key: "120", label: "2:00", minutes: 120 },
+] as const;
+
+type DurationPresetKey = (typeof DURATION_PRESETS)[number]["key"];
+
+function addMinutesToTimeString(hhmm: string, minutesToAdd: number): string {
+  const parts = hhmm.split(":");
+  const h = parseInt(parts[0] ?? "0", 10);
+  const m = parseInt(parts[1] ?? "0", 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  let total = h * 60 + m + minutesToAdd;
+  total = Math.min(total, 23 * 60 + 59);
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
+function detectDurationPreset(
+  start: string,
+  end: string
+): DurationPresetKey | null {
+  const [sh, sm] = start.split(":").map((x) => parseInt(x, 10));
+  const [eh, em] = end.split(":").map((x) => parseInt(x, 10));
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return null;
+  const diff = eh * 60 + em - (sh * 60 + sm);
+  if (diff <= 0) return null;
+  for (const p of DURATION_PRESETS) {
+    if (p.minutes === diff) return p.key;
+  }
+  return null;
+}
+
+interface JobTemplateOption {
+  id: string;
+  name: string;
+  maxSlots: number;
+}
 
 const DAYS_OF_WEEK = [
   { label: "Sun", value: 0 },
@@ -43,7 +97,7 @@ const DAYS_OF_WEEK = [
   { label: "Sat", value: 6 },
 ] as const;
 
-const eventSchema = z.object({
+const eventObjectSchema = z.object({
   title: z.string().min(1, "Title is required"),
   type: z.enum(["GAME", "PRACTICE", "OTHER", "CLUB_EVENT", "BLACKOUT"]),
   date: z.string().min(1, "Date is required"),
@@ -61,26 +115,45 @@ const eventSchema = z.object({
   blackoutScope: z.enum(["ORG_WIDE", "FACILITY"]).optional(),
   blackoutEventTypes: z.string().optional(),
   blackoutEndDate: z.string().optional(),
+  noJobs: z.boolean().optional(),
   isRecurring: z.boolean(),
   recurrenceFrequency: z.enum(["WEEKLY", "BIWEEKLY"]).optional(),
   recurrenceDays: z.array(z.number()).optional(),
   recurrenceUntil: z.string().optional(),
-}).refine(
-  (data) => {
-    if (data.type === "BLACKOUT" || data.type === "CLUB_EVENT") return true;
-    if (data.type === "GAME" && data.gameVenue === "AWAY") return !!data.teamId;
-    return !!data.teamId && !!data.subFacilityId;
-  },
-  { message: "Team and facility are required", path: ["teamId"] }
-).refine(
-  (data) => {
-    if (data.allDay) return true;
-    return !!data.startTime && !!data.endTime;
-  },
-  { message: "Start and end time are required", path: ["startTime"] }
-);
+});
 
-type EventFormValues = z.infer<typeof eventSchema>;
+function createEventSchema(fixedTeamId?: string) {
+  return eventObjectSchema
+    .refine(
+      (data) => {
+        if (data.type === "BLACKOUT" || data.type === "CLUB_EVENT") return true;
+        const tid =
+          (data.teamId && data.teamId.trim()) ||
+          (fixedTeamId && fixedTeamId.trim()) ||
+          "";
+        return !!tid;
+      },
+      { message: "Team is required", path: ["teamId"] }
+    )
+    .refine(
+      (data) => {
+        if (data.type === "BLACKOUT" || data.type === "CLUB_EVENT") return true;
+        if (data.type === "GAME" && data.gameVenue === "AWAY") return true;
+        if (data.useCustomLocation) return true;
+        return !!data.subFacilityId;
+      },
+      { message: "Please select a facility for this home game", path: ["subFacilityId"] }
+    )
+    .refine(
+      (data) => {
+        if (data.allDay) return true;
+        return !!data.startTime && !!data.endTime;
+      },
+      { message: "Start and end time are required", path: ["startTime"] }
+    );
+}
+
+type EventFormValues = z.infer<typeof eventObjectSchema>;
 
 interface Team {
   id: string;
@@ -121,6 +194,7 @@ interface EventData {
   customLocation?: string | null;
   customLocationUrl?: string | null;
   gameVenue?: string | null;
+  noJobs?: boolean;
 }
 
 interface EventFormProps {
@@ -135,6 +209,7 @@ interface EventFormProps {
   event?: EventData;
   defaultDate?: Date;
   fixedTeamId?: string;
+  userTeams?: Team[];
 }
 
 export function EventForm({
@@ -149,7 +224,12 @@ export function EventForm({
   event,
   defaultDate,
   fixedTeamId,
+  userTeams = [],
 }: EventFormProps) {
+  const eventSchemaResolved = useMemo(
+    () => createEventSchema(fixedTeamId),
+    [fixedTeamId]
+  );
   const [loading, setLoading] = useState(false);
   const [conflict, setConflict] = useState<ConflictData | null>(null);
   const [forceLoading, setForceLoading] = useState(false);
@@ -168,7 +248,10 @@ export function EventForm({
     event?.subFacilityId ?? ""
   );
   const isTeamContext = !!fixedTeamId;
-  const defaultType = isTeamContext ? (event?.type ?? "GAME") : (event?.type ?? "CLUB_EVENT");
+  const hasTeams = isAdmin || userTeams.length > 0 || teams.length > 0;
+  const defaultType = isTeamContext
+    ? (event?.type ?? "GAME")
+    : (event?.type ?? (hasTeams ? "GAME" : "CLUB_EVENT"));
   const [selectedType, setSelectedType] = useState(defaultType);
   const [useCustomLocation, setUseCustomLocation] = useState(
     !!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId)
@@ -177,10 +260,34 @@ export function EventForm({
     (event?.gameVenue as "HOME" | "AWAY") || "HOME"
   );
   const [allDay, setAllDay] = useState(false);
+  const [noJobs, setNoJobs] = useState(event?.noJobs ?? false);
   const [isRecurring, setIsRecurring] = useState(event?.isRecurring ?? false);
   const [recurrenceFrequency, setRecurrenceFrequency] = useState<"WEEKLY" | "BIWEEKLY">("WEEKLY");
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [recurrenceUntil, setRecurrenceUntil] = useState("");
+
+  const [jobTemplates, setJobTemplates] = useState<JobTemplateOption[]>([]);
+  const [selectedJobs, setSelectedJobs] = useState<Map<string, number>>(new Map());
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [durationPreset, setDurationPreset] = useState<DurationPresetKey | null>(
+    "105"
+  );
+
+  const showJobPicker = !event && selectedType === "CLUB_EVENT" && !noJobs;
+
+  useEffect(() => {
+    if (!showJobPicker) return;
+    if (jobTemplates.length > 0) return;
+    setJobsLoading(true);
+    fetch("/api/jobs/templates")
+      .then((r) => r.json())
+      .then((data: { id: string; name: string; scope: string; maxSlots: number; active: boolean }[]) => {
+        const facility = data.filter((t) => t.active && t.scope === "FACILITY");
+        setJobTemplates(facility);
+      })
+      .catch(() => {})
+      .finally(() => setJobsLoading(false));
+  }, [showJobPicker, jobTemplates.length]);
 
   const defaultDateStr = defaultDate
     ? format(defaultDate, "yyyy-MM-dd")
@@ -195,15 +302,19 @@ export function EventForm({
     watch,
     formState: { errors },
   } = useForm<EventFormValues>({
-    resolver: zodResolver(eventSchema),
+    resolver: zodResolver(eventSchemaResolved),
     defaultValues: {
       title: event?.title ?? "",
       type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? defaultType,
       date: event
         ? format(parseISO(event.startTime), "yyyy-MM-dd")
         : defaultDateStr,
-      startTime: event ? format(parseISO(event.startTime), "HH:mm") : "09:00",
-      endTime: event ? format(parseISO(event.endTime), "HH:mm") : "10:00",
+      startTime: event
+        ? format(parseISO(event.startTime), "HH:mm")
+        : DEFAULT_EVENT_START,
+      endTime: event
+        ? format(parseISO(event.endTime), "HH:mm")
+        : addMinutesToTimeString(DEFAULT_EVENT_START, DEFAULT_DURATION_MINUTES),
       allDay: false,
       teamId: fixedTeamId || event?.teamId || "",
       subFacilityId: event?.subFacilityId ?? "",
@@ -213,6 +324,7 @@ export function EventForm({
       customLocationUrl: event?.customLocationUrl ?? "",
       useCustomLocation: !!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId),
       gameVenue: (event?.gameVenue as "HOME" | "AWAY") || "HOME",
+      noJobs: event?.noJobs ?? false,
       blackoutScope: "ORG_WIDE",
       blackoutEventTypes: "ALL",
       blackoutEndDate: "",
@@ -230,14 +342,21 @@ export function EventForm({
         : defaultDateStr;
 
       const dayOfWeek = getDay(dateStr ? new Date(dateStr + "T12:00:00") : new Date());
+      const startStr = event
+        ? format(parseISO(event.startTime), "HH:mm")
+        : DEFAULT_EVENT_START;
+      const endStr = event
+        ? format(parseISO(event.endTime), "HH:mm")
+        : addMinutesToTimeString(startStr, DEFAULT_DURATION_MINUTES);
+
+      setDurationPreset(event ? detectDurationPreset(startStr, endStr) : "105");
+
       reset({
         title: event?.title ?? "",
         type: (event?.type as "GAME" | "PRACTICE" | "OTHER" | "CLUB_EVENT" | "BLACKOUT") ?? defaultType,
         date: dateStr,
-        startTime: event
-          ? format(parseISO(event.startTime), "HH:mm")
-          : "09:00",
-        endTime: event ? format(parseISO(event.endTime), "HH:mm") : "10:00",
+        startTime: startStr,
+        endTime: endStr,
         allDay: false,
         teamId: fixedTeamId || event?.teamId || "",
         subFacilityId: event?.subFacilityId ?? "",
@@ -247,6 +366,7 @@ export function EventForm({
         customLocationUrl: event?.customLocationUrl ?? "",
         useCustomLocation: !!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId),
         gameVenue: (event?.gameVenue as "HOME" | "AWAY") || "HOME",
+        noJobs: event?.noJobs ?? false,
         blackoutScope: "ORG_WIDE",
         blackoutEventTypes: "ALL",
         blackoutEndDate: "",
@@ -261,13 +381,31 @@ export function EventForm({
       setUseCustomLocation(!!(event?.type === "CLUB_EVENT" && event?.customLocation && !event?.subFacilityId));
       setGameVenue((event?.gameVenue as "HOME" | "AWAY") || "HOME");
       setAllDay(false);
+      setNoJobs(event?.noJobs ?? false);
       setIsRecurring(event?.isRecurring ?? false);
       setRecurrenceFrequency("WEEKLY");
       setRecurrenceDays([dayOfWeek]);
       setRecurrenceUntil("");
+      setSelectedJobs(new Map());
       setConflict(null);
     }
-  }, [open, event, defaultDateStr, reset]);
+  }, [open, event, defaultDateStr, reset, currentSeasonId, fixedTeamId, defaultType]);
+
+  function applyDurationPreset(preset: DurationPresetKey) {
+    setAllDay(false);
+    setValue("allDay", false);
+    setDurationPreset(preset);
+    const def = DURATION_PRESETS.find((p) => p.key === preset);
+    if (!def) return;
+    const start = getValues("startTime") || DEFAULT_EVENT_START;
+    setValue("endTime", addMinutesToTimeString(start, def.minutes));
+  }
+
+  function applyAllDayNonBlackout() {
+    setAllDay(true);
+    setValue("allDay", true);
+    setDurationPreset(null);
+  }
 
   async function submitEvent(data: EventFormValues, force = false) {
     if (data.type === "BLACKOUT") {
@@ -309,6 +447,10 @@ export function EventForm({
     const isClubEvent = data.type === "CLUB_EVENT";
     const isAwayGame = data.type === "GAME" && data.gameVenue === "AWAY";
     const wantsCustomLocation = (isClubEvent && data.useCustomLocation) || isAwayGame;
+    const effectiveTeamId =
+      isClubEvent
+        ? null
+        : (fixedTeamId?.trim() || data.teamId?.trim() || null);
     const payload: Record<string, unknown> = {
       title: data.title,
       type: data.type,
@@ -317,14 +459,22 @@ export function EventForm({
       endTime: endDateTime.toISOString(),
       notes: data.notes || null,
       isRecurring: data.isRecurring,
-      teamId: isClubEvent ? null : data.teamId,
+      teamId: effectiveTeamId,
       subFacilityId: wantsCustomLocation ? null : (data.subFacilityId || null),
       seasonId: currentSeasonId || null,
       customLocation: wantsCustomLocation ? data.customLocation || null : null,
       customLocationUrl: wantsCustomLocation ? data.customLocationUrl || null : null,
       gameVenue: data.type === "GAME" ? (data.gameVenue || "HOME") : null,
+      noJobs: data.noJobs || false,
       force,
     };
+
+    if (selectedJobs.size > 0 && !payload.noJobs) {
+      payload.manualJobs = Array.from(selectedJobs.entries()).map(([templateId, slots]) => ({
+        jobTemplateId: templateId,
+        slotsNeeded: slots,
+      }));
+    }
 
     if (data.isRecurring) {
       payload.recurrenceFrequency = recurrenceFrequency;
@@ -444,9 +594,15 @@ export function EventForm({
                     setSelectedSubFacilityId("");
                     setAllDay(true);
                     setValue("allDay", true);
+                    setDurationPreset(null);
                   } else {
                     setAllDay(false);
                     setValue("allDay", false);
+                    const st = getValues("startTime") || DEFAULT_EVENT_START;
+                    const en =
+                      getValues("endTime") ||
+                      addMinutesToTimeString(st, DEFAULT_DURATION_MINUTES);
+                    setDurationPreset(detectDurationPreset(st, en) ?? "105");
                   }
                 }}
               >
@@ -461,6 +617,8 @@ export function EventForm({
                     </>
                   ) : (
                     <>
+                      {hasTeams && <SelectItem value="GAME">Game</SelectItem>}
+                      {hasTeams && <SelectItem value="PRACTICE">Practice</SelectItem>}
                       {isAdmin && <SelectItem value="CLUB_EVENT">Club Event</SelectItem>}
                       {isAdmin && <SelectItem value="BLACKOUT">Blackout Date</SelectItem>}
                     </>
@@ -534,6 +692,7 @@ export function EventForm({
                     const val = !!checked;
                     setAllDay(val);
                     setValue("allDay", val);
+                    if (val) setDurationPreset(null);
                   }}
                 />
                 <Label htmlFor="event-allday" className="text-sm font-normal">
@@ -542,33 +701,108 @@ export function EventForm({
               </div>
             )}
 
+            {selectedType !== "BLACKOUT" && allDay && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2.5">
+                <span className="text-sm font-medium">All day</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    setAllDay(false);
+                    setValue("allDay", false);
+                    const start = getValues("startTime") || DEFAULT_EVENT_START;
+                    const end = getValues("endTime") || addMinutesToTimeString(start, DEFAULT_DURATION_MINUTES);
+                    setDurationPreset(detectDurationPreset(start, end) ?? "105");
+                  }}
+                >
+                  Use start &amp; end times
+                </Button>
+              </div>
+            )}
+
             {!allDay && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Start Time</Label>
-                  <TimePicker
-                    value={watch("startTime") ?? ""}
-                    onChange={(v) => setValue("startTime", v)}
-                    placeholder="Start time"
-                  />
-                  {errors.startTime && (
-                    <p className="text-xs text-destructive">
-                      {errors.startTime.message}
-                    </p>
-                  )}
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Start Time</Label>
+                    <TimePicker
+                      value={watch("startTime") ?? ""}
+                      onChange={(v) => {
+                        setValue("startTime", v);
+                        if (durationPreset) {
+                          const def = DURATION_PRESETS.find(
+                            (p) => p.key === durationPreset
+                          );
+                          if (def) {
+                            setValue(
+                              "endTime",
+                              addMinutesToTimeString(v, def.minutes)
+                            );
+                          }
+                        }
+                      }}
+                      placeholder="Start time"
+                    />
+                    {errors.startTime && (
+                      <p className="text-xs text-destructive">
+                        {errors.startTime.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>End Time</Label>
+                    <TimePicker
+                      value={watch("endTime") ?? ""}
+                      onChange={(v) => {
+                        setValue("endTime", v);
+                        const start =
+                          getValues("startTime") || DEFAULT_EVENT_START;
+                        setDurationPreset(detectDurationPreset(start, v));
+                      }}
+                      placeholder="End time"
+                    />
+                    {errors.endTime && (
+                      <p className="text-xs text-destructive">
+                        {errors.endTime.message}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label>End Time</Label>
-                  <TimePicker
-                    value={watch("endTime") ?? ""}
-                    onChange={(v) => setValue("endTime", v)}
-                    placeholder="End time"
-                  />
-                  {errors.endTime && (
-                    <p className="text-xs text-destructive">
-                      {errors.endTime.message}
-                    </p>
-                  )}
+                <div className="grid gap-1.5">
+                  <Label className="text-xs text-muted-foreground font-normal">
+                    Event length
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DURATION_PRESETS.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => applyDurationPreset(p.key)}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          durationPreset === p.key
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                    {selectedType !== "BLACKOUT" && (
+                      <button
+                        type="button"
+                        onClick={applyAllDayNonBlackout}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          "bg-muted text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        All day
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -797,6 +1031,53 @@ export function EventForm({
 
             {/* Season is auto-selected to current season */}
 
+            {selectedType !== "BLACKOUT" && !(selectedType === "GAME" && gameVenue === "AWAY") && (
+              <div className="flex items-center justify-between rounded-xl border border-border/50 p-3">
+                <div>
+                  <Label htmlFor="noJobs" className="text-sm font-medium">
+                    No volunteers needed
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Skip volunteer job creation for this event
+                  </p>
+                </div>
+                <Switch
+                  id="noJobs"
+                  checked={noJobs}
+                  onCheckedChange={(checked) => {
+                    setNoJobs(!!checked);
+                    setValue("noJobs", !!checked);
+                  }}
+                />
+              </div>
+            )}
+
+            {showJobPicker && (
+              <div className="grid gap-2">
+                <Label className="text-sm font-medium">Volunteer Jobs</Label>
+                <JobPicker
+                  templates={jobTemplates}
+                  loading={jobsLoading}
+                  selectedJobs={selectedJobs}
+                  onToggle={(id, maxSlots) => {
+                    setSelectedJobs((prev) => {
+                      const next = new Map(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.set(id, maxSlots);
+                      return next;
+                    });
+                  }}
+                  onSlotsChange={(id, slots) => {
+                    setSelectedJobs((prev) => {
+                      const next = new Map(prev);
+                      next.set(id, slots);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+            )}
+
             {selectedType !== "BLACKOUT" && (
               <div className="grid gap-2">
                 <Label htmlFor="event-notes">Notes</Label>
@@ -946,5 +1227,136 @@ export function EventForm({
         />
       )}
     </>
+  );
+}
+
+function JobPicker({
+  templates,
+  loading,
+  selectedJobs,
+  onToggle,
+  onSlotsChange,
+}: {
+  templates: JobTemplateOption[];
+  loading: boolean;
+  selectedJobs: Map<string, number>;
+  onToggle: (id: string, maxSlots: number) => void;
+  onSlotsChange: (id: string, slots: number) => void;
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const selectedCount = selectedJobs.size;
+
+  const filtered = search.trim()
+    ? templates.filter((t) => t.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : templates;
+
+  return (
+    <div className="space-y-2">
+      <Popover
+        open={popoverOpen}
+        onOpenChange={(open) => {
+          setPopoverOpen(open);
+          if (!open) setSearch("");
+        }}
+      >
+        <PopoverTrigger
+          className={cn(
+            "flex w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors",
+            "hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            selectedCount === 0 && "text-muted-foreground"
+          )}
+        >
+          <span>
+            {loading
+              ? "Loading..."
+              : selectedCount === 0
+                ? "Select jobs..."
+                : `${selectedCount} job${selectedCount !== 1 ? "s" : ""} selected`}
+          </span>
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", popoverOpen && "rotate-180")} />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-(--anchor-width) p-0">
+          <div className="border-b border-border/50 px-2 py-1.5">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search jobs..."
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto p-1">
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground px-2 py-3 text-center">
+                {templates.length === 0 ? "No job templates available" : "No matches"}
+              </p>
+            )}
+            {filtered.map((t) => {
+              const isSelected = selectedJobs.has(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onToggle(t.id, t.maxSlots)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors text-left",
+                    isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted"
+                  )}
+                >
+                  <Checkbox checked={isSelected} className="pointer-events-none shrink-0" />
+                  <span className="truncate">{t.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {selectedCount > 0 && (
+        <div className="space-y-1.5">
+          {Array.from(selectedJobs.entries()).map(([id, slots]) => {
+            const t = templates.find((t) => t.id === id);
+            if (!t) return null;
+            return (
+              <div
+                key={id}
+                className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">{t.name}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => { if (slots > 1) onSlotsChange(id, slots - 1); }}
+                    disabled={slots <= 1}
+                    className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-30"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="text-xs font-medium tabular-nums w-4 text-center">{slots}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSlotsChange(id, slots + 1)}
+                    className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-muted"
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggle(id, t.maxSlots)}
+                    className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 ml-0.5"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

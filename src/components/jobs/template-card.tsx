@@ -140,7 +140,7 @@ export function TemplateCard({ template, canManage }: TemplateCardProps) {
           </Badge>
           <Badge variant="secondary" className="rounded-lg text-xs gap-1">
             <Clock className="h-3 w-3" />
-            {template.hoursPerGame}h / game
+            {template.hoursPerGame}h / event
           </Badge>
           {!template.active && (
             <Badge variant="secondary" className="rounded-lg text-xs bg-muted text-muted-foreground">

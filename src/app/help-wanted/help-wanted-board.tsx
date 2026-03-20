@@ -68,6 +68,7 @@ export interface JobData {
   assignmentCount: number;
   volunteerNames: string[];
   hoursPerGame: number;
+  askComfortLevel?: boolean;
 }
 
 export interface FilterOption {
@@ -426,7 +427,7 @@ export function HelpWantedBoard({
       ) : viewMode === "table" ? (
         <TableView jobs={paginatedJobs} highlightedId={highlightedId} highlightJobId={highlightJobId} highlightRef={highlightRef} />
       ) : (
-        <CardView jobsByDate={jobsByDate} compact={compact} />
+        <CardView jobsByDate={jobsByDate} compact={compact} highlightJobId={highlightJobId} />
       )}
 
       {/* Pagination */}
@@ -612,9 +613,11 @@ function MySignupsLookup() {
 function CardView({
   jobsByDate,
   compact = false,
+  highlightJobId,
 }: {
   jobsByDate: Record<string, JobData[]>;
   compact?: boolean;
+  highlightJobId?: string | null;
 }) {
   return (
     <div className={cn("space-y-6", compact && "space-y-4")}>
@@ -688,6 +691,7 @@ function CardView({
                         {eventJobs.map((job) => (
                           <HelpWantedJobCard
                             key={job.id}
+                            autoOpen={job.id === highlightJobId}
                             job={{
                               id: job.id,
                               templateName: job.templateName,
@@ -702,6 +706,7 @@ function CardView({
                               assignmentCount: job.assignmentCount,
                               volunteerNames: job.volunteerNames,
                               hoursPerGame: job.hoursPerGame,
+                              askComfortLevel: job.askComfortLevel,
                             }}
                           />
                         ))}
@@ -739,7 +744,7 @@ function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs
           </thead>
           <tbody>
             {jobs.map((job) => (
-              <TableRow key={job.id} job={job} highlighted={job.id === highlightedId} highlightRef={job.id === highlightJobId ? highlightRef : undefined} />
+              <TableRow key={job.id} job={job} highlighted={job.id === highlightedId} autoOpen={job.id === highlightJobId} highlightRef={job.id === highlightJobId ? highlightRef : undefined} />
             ))}
           </tbody>
         </table>
@@ -748,14 +753,14 @@ function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs
       {/* Mobile compact list */}
       <div className="sm:hidden divide-y divide-border/50">
         {jobs.map((job) => (
-          <MobileTableRow key={job.id} job={job} />
+          <MobileTableRow key={job.id} job={job} autoOpen={job.id === highlightJobId} />
         ))}
       </div>
     </Card>
   );
 }
 
-function TableRow({ job, highlighted, highlightRef }: { job: JobData; highlighted?: boolean; highlightRef?: React.Ref<HTMLTableRowElement> }) {
+function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; highlighted?: boolean; autoOpen?: boolean; highlightRef?: React.Ref<HTMLTableRowElement> }) {
   const [count, setCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - count;
@@ -832,6 +837,8 @@ function TableRow({ job, highlighted, highlightRef }: { job: JobData; highlighte
             eventTitle={job.eventTitle}
             eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
             eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
+            autoOpen={autoOpen}
+            askComfortLevel={job.askComfortLevel}
             onSuccess={(name) => {
               setCount((c) => c + 1);
               if (name) setNames((prev) => [...prev, name]);
@@ -847,7 +854,7 @@ function TableRow({ job, highlighted, highlightRef }: { job: JobData; highlighte
   );
 }
 
-function MobileTableRow({ job }: { job: JobData }) {
+function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean }) {
   const [count, setCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - count;
@@ -887,6 +894,8 @@ function MobileTableRow({ job }: { job: JobData }) {
               eventTitle={job.eventTitle}
               eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
               eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
+              autoOpen={autoOpen}
+              askComfortLevel={job.askComfortLevel}
               onSuccess={(name) => {
                 setCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

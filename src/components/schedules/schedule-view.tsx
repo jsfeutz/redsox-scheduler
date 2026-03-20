@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   format,
@@ -9,7 +9,6 @@ import {
   startOfWeek,
   endOfWeek,
   startOfDay,
-  endOfDay,
   eachDayOfInterval,
   isSameMonth,
   isSameDay,
@@ -18,10 +17,7 @@ import {
   subMonths,
   addWeeks,
   subWeeks,
-  addDays,
-  subDays,
   parseISO,
-  differenceInMinutes,
 } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,6 +41,8 @@ import {
   Loader2,
   Ban,
   Filter,
+  Download,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -63,6 +61,8 @@ import { toast } from "sonner";
 import { EventForm } from "./event-form";
 import { EventDetail } from "./event-detail";
 import { TimeSlotRequests, TimeSlotRequestsBadge } from "./time-slot-requests";
+import { CalendarSubscribeButton } from "./calendar-subscribe-button";
+import { FacilityFilterCombobox } from "./facility-filter-combobox";
 
 
 interface Team {
@@ -94,13 +94,16 @@ interface JobAssignmentData {
   id: string;
   name: string | null;
   playerName: string | null;
+  comfortLevel?: string | null;
 }
 
 interface GameJobData {
   id: string;
+  jobTemplateId?: string;
   slotsNeeded: number;
   isPublic: boolean;
-  jobTemplate: { name: string; scope: string };
+  disabled?: boolean;
+  jobTemplate: { name: string; scope: string; askComfortLevel?: boolean };
   assignments: JobAssignmentData[];
 }
 
@@ -121,6 +124,7 @@ interface ScheduleEventData {
   customLocation?: string | null;
   customLocationUrl?: string | null;
   gameVenue?: string | null;
+  noJobs?: boolean;
   cancelledByBumpId?: string | null;
   team?: { id: string; name: string; color: string; headCoach?: { name: string } | null } | null;
   subFacility?: {
@@ -139,6 +143,12 @@ interface ScheduleViewProps {
   canBump: boolean;
   isAdmin?: boolean;
   userTeams?: Team[];
+  /** When set, calendar is scoped to this team (hides team picker, optional home/away game filter). */
+  lockedTeamId?: string;
+  /** SessionStorage key for view mode (default `schedule-viewMode`). Use per-team keys on team pages. */
+  viewModeStorageKey?: string;
+  /** Called after create/edit/delete so parent RSC data (e.g. team overview) can refresh. */
+  onScheduleChanged?: () => void;
 }
 
 interface BlackoutData {
@@ -160,6 +170,26 @@ function getTypeLabel(type: string, gameVenue?: string | null) {
   return "Other";
 }
 
+/** Lowercase haystack from schedule event fields for agenda search. */
+function scheduleEventSearchHaystack(event: ScheduleEventData): string {
+  const typeLabel = getTypeLabel(event.type, event.gameVenue);
+  const teamName = event.team?.name ?? "Club Event";
+  const coach = event.team?.headCoach?.name ?? "";
+  const locationLabel = event.subFacility
+    ? `${event.subFacility.facility.name} ${event.subFacility.name}`
+    : event.customLocation ?? "";
+  return [
+    event.title,
+    teamName,
+    coach,
+    typeLabel,
+    locationLabel,
+    event.notes ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 export function ScheduleView({
   teams,
   facilities,
@@ -168,18 +198,23 @@ export function ScheduleView({
   canBump,
   isAdmin = false,
   userTeams = [],
+  lockedTeamId,
+  viewModeStorageKey,
+  onScheduleChanged,
 }: ScheduleViewProps) {
   const isMobile = useIsMobile();
+  const storageKey = viewModeStorageKey ?? "schedule-viewMode";
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">(() => {
+  const [viewMode, setViewMode] = useState<"month" | "week" | "agenda">(() => {
     if (typeof window === "undefined") return "agenda";
-    const saved = sessionStorage.getItem("schedule-viewMode");
-    if (saved && ["month", "week", "day", "agenda"].includes(saved)) {
-      return saved as "month" | "week" | "day" | "agenda";
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved === "day") return "agenda";
+    if (saved && ["month", "week", "agenda"].includes(saved)) {
+      return saved as "month" | "week" | "agenda";
     }
     return window.matchMedia("(max-width: 767px)").matches ? "agenda" : "month";
   });
-  const [filterTeamId, setFilterTeamId] = useState("");
+  const [filterTeamId, setFilterTeamId] = useState(lockedTeamId ?? "");
   const [filterSubFacilityId, setFilterSubFacilityId] = useState("");
   const [events, setEvents] = useState<ScheduleEventData[]>([]);
   const [blackouts, setBlackouts] = useState<BlackoutData[]>([]);
@@ -187,6 +222,8 @@ export function ScheduleView({
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [showAwayGames, setShowAwayGames] = useState(false);
+  const [gameVenueFilter, setGameVenueFilter] = useState<"all" | "home" | "away">("all");
+  const [agendaSearch, setAgendaSearch] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createDate, setCreateDate] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] =
@@ -197,21 +234,43 @@ export function ScheduleView({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    sessionStorage.setItem("schedule-viewMode", viewMode);
-  }, [viewMode]);
+    sessionStorage.setItem(storageKey, viewMode);
+  }, [viewMode, storageKey]);
 
-  const filteredEvents = showAwayGames
-    ? events
-    : events.filter((e) => e.gameVenue !== "AWAY");
+  useEffect(() => {
+    if (lockedTeamId) setFilterTeamId(lockedTeamId);
+  }, [lockedTeamId]);
 
-  const hasActiveFilters = !!filterTeamId || !!filterSubFacilityId || showAwayGames;
+  const filteredEvents = lockedTeamId
+    ? events.filter((e) => {
+        if (gameVenueFilter === "all") return true;
+        if (gameVenueFilter === "home")
+          return !(e.type === "GAME" && e.gameVenue === "AWAY");
+        return e.type === "GAME" && e.gameVenue === "AWAY";
+      })
+    : showAwayGames
+      ? events
+      : events.filter((e) => e.gameVenue !== "AWAY");
+
+  const venueFilterActive = lockedTeamId
+    ? gameVenueFilter !== "all"
+    : showAwayGames;
+  const hasActiveFilters =
+    !!filterSubFacilityId ||
+    venueFilterActive ||
+    (!lockedTeamId && !!filterTeamId);
+
+  /** Public iCal: full org, or one team (locked tab or selected team filter). */
+  const scheduleIcalPath = useMemo(() => {
+    const base = "/api/schedule/public/ical";
+    const tid = lockedTeamId ?? filterTeamId;
+    if (tid) return `${base}?teamId=${encodeURIComponent(tid)}`;
+    return base;
+  }, [lockedTeamId, filterTeamId]);
 
   const getDateRange = useCallback(() => {
     if (viewMode === "agenda") {
-      return { start: startOfDay(currentDate), end: endOfDay(addDays(currentDate, 13)) };
-    }
-    if (viewMode === "day") {
-      return { start: startOfDay(currentDate), end: endOfDay(currentDate) };
+      return { start: null, end: null };
     }
     if (viewMode === "month") {
       const monthStart = startOfMonth(currentDate);
@@ -232,8 +291,8 @@ export function ScheduleView({
     try {
       const { start, end } = getDateRange();
       const params = new URLSearchParams();
-      params.set("startDate", start.toISOString());
-      params.set("endDate", end.toISOString());
+      if (start) params.set("startDate", start.toISOString());
+      if (end) params.set("endDate", end.toISOString());
       if (filterTeamId) params.set("teamId", filterTeamId);
       if (filterSubFacilityId)
         params.set("subFacilityId", filterSubFacilityId);
@@ -258,20 +317,20 @@ export function ScheduleView({
   }, [fetchEvents]);
 
   function navigatePrev() {
+    if (viewMode === "agenda") return;
     setCurrentDate((prev) => {
       if (viewMode === "month") return subMonths(prev, 1);
       if (viewMode === "week") return subWeeks(prev, 1);
-      if (viewMode === "day") return subDays(prev, 1);
-      return subDays(prev, 14);
+      return prev;
     });
   }
 
   function navigateNext() {
+    if (viewMode === "agenda") return;
     setCurrentDate((prev) => {
       if (viewMode === "month") return addMonths(prev, 1);
       if (viewMode === "week") return addWeeks(prev, 1);
-      if (viewMode === "day") return addDays(prev, 1);
-      return addDays(prev, 14);
+      return prev;
     });
   }
 
@@ -300,15 +359,17 @@ export function ScheduleView({
   function handleSaved() {
     handleFormClose();
     fetchEvents();
+    onScheduleChanged?.();
   }
 
   function handleDeleted() {
     setSelectedEvent(null);
     fetchEvents();
+    onScheduleChanged?.();
   }
 
   const { start: rangeStart, end: rangeEnd } = getDateRange();
-  const days = viewMode === "month" || viewMode === "week"
+  const days = (viewMode === "month" || viewMode === "week") && rangeStart && rangeEnd
     ? eachDayOfInterval({ start: rangeStart, end: rangeEnd })
     : [];
 
@@ -327,52 +388,168 @@ export function ScheduleView({
   const headerLabel = (() => {
     if (viewMode === "month") return format(currentDate, "MMMM yyyy");
     if (viewMode === "week") return `${format(startOfWeek(currentDate), "MMM d")} – ${format(endOfWeek(currentDate), "MMM d, yyyy")}`;
-    if (viewMode === "day") return format(currentDate, "EEEE, MMMM d, yyyy");
-    return `${format(currentDate, "MMM d")} – ${format(addDays(currentDate, 13), "MMM d, yyyy")}`;
+    return "Agenda";
   })();
 
-  const agendaDays = viewMode === "agenda"
-    ? eachDayOfInterval({ start: rangeStart, end: rangeEnd })
-    : [];
+  const agendaDays = (() => {
+    if (viewMode !== "agenda") return [];
+    if (filteredEvents.length === 0) return [];
+    const sorted = [...filteredEvents].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime)
+    );
+    const first = startOfDay(parseISO(sorted[0].startTime));
+    const last = startOfDay(parseISO(sorted[sorted.length - 1].startTime));
+    return eachDayOfInterval({ start: first, end: last });
+  })();
 
-  const DAY_START_HOUR = 6;
-  const DAY_END_HOUR = 22;
-  const dayHours = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => DAY_START_HOUR + i);
+  const agendaSearchWords = useMemo(
+    () => agendaSearch.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [agendaSearch]
+  );
+
+  const scheduleEventMatchesAgendaSearch = useMemo(() => {
+    return (event: ScheduleEventData) => {
+      if (agendaSearchWords.length === 0) return true;
+      const haystack = scheduleEventSearchHaystack(event);
+      return agendaSearchWords.every((w) => haystack.includes(w));
+    };
+  }, [agendaSearchWords]);
+
+  const agendaEventsForDay = (day: Date) =>
+    getEventsForDay(day).filter(scheduleEventMatchesAgendaSearch);
+
+  const agendaHasVisibleContent = agendaDays.some(
+    (d) =>
+      agendaEventsForDay(d).length > 0 || getBlackoutsForDay(d).length > 0
+  );
 
   return (
     <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-4 md:h-auto">
       {/* ===== MOBILE TOOLBAR ===== */}
       <div className="md:hidden flex flex-col gap-1.5 shrink-0 pb-2">
-        {/* Row 1: nav + date + actions */}
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={navigatePrev}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+        {/* Row 1: date navigation (month/week only — agenda lists all events, no range) */}
+        {viewMode !== "agenda" && (
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={navigatePrev}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <button
+              type="button"
+              className="text-sm font-semibold truncate flex-1 min-w-0 text-center px-1 py-1.5 rounded-md active:opacity-70 active:bg-muted/50"
+              onClick={() => setCurrentDate(new Date())}
+            >
+              {headerLabel}
+            </button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={navigateNext}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Row 2: view mode */}
+        <Tabs
+          value={viewMode}
+          onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "agenda"); }}
+          className="w-full"
+        >
+          <TabsList className="w-full grid grid-cols-3 h-9">
+            <TabsTrigger value="agenda" className="text-[11px] h-8 px-0">
+              <List className="h-3.5 w-3.5 mr-0.5 shrink-0" />Agenda
+            </TabsTrigger>
+            <TabsTrigger value="week" className="text-[11px] h-8 px-0">
+              <CalendarDays className="h-3.5 w-3.5 mr-0.5 shrink-0" />Week
+            </TabsTrigger>
+            <TabsTrigger value="month" className="text-[11px] h-8 px-0">
+              <CalendarIcon className="h-3.5 w-3.5 mr-0.5 shrink-0" />Month
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Row 3: all teams (main schedule) or home/away (team tab) */}
+        {!lockedTeamId && teams.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5 -mx-1 px-1 touch-pan-x">
+            <span className="text-[10px] text-muted-foreground shrink-0 font-medium uppercase tracking-wide">
+              Teams
+            </span>
+            <button
+              type="button"
+              onClick={() => setFilterTeamId("")}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors",
+                !filterTeamId
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              All
+            </button>
+            {teams.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setFilterTeamId(t.id)}
+                className={cn(
+                  "max-w-[140px] px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5",
+                  filterTeamId === t.id
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: filterTeamId === t.id ? "currentColor" : t.color }}
+                />
+                <span className="truncate">{t.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {lockedTeamId && (
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5 -mx-1 px-1 touch-pan-x">
+            <span className="text-[10px] text-muted-foreground shrink-0 font-medium uppercase tracking-wide">
+              Games
+            </span>
+            {(["all", "home", "away"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setGameVenueFilter(k)}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors",
+                  gameVenueFilter === k
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {k === "all" ? "All" : k === "home" ? "Home" : "Away"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Row 4: filters + live feed + new event */}
+        <div className="flex items-center gap-2">
           <button
-            className="text-sm font-semibold truncate flex-1 text-center active:opacity-70"
-            onClick={() => setCurrentDate(new Date())}
-          >
-            {headerLabel}
-          </button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={navigateNext}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <button
+            type="button"
             onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
             className={cn(
-              "h-8 w-8 flex items-center justify-center rounded-md transition-colors relative",
-              mobileFiltersOpen ? "bg-primary/15 text-primary" : "text-muted-foreground"
+              "flex items-center gap-1.5 h-9 min-w-0 flex-1 px-2.5 rounded-md border text-xs font-medium transition-colors",
+              mobileFiltersOpen
+                ? "bg-primary/10 text-primary border-primary/25"
+                : "border-border bg-background text-muted-foreground hover:bg-muted/40"
             )}
           >
-            <Filter className="h-4 w-4" />
+            <Filter className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Filters</span>
             {hasActiveFilters && (
-              <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary" />
+              <span className="h-2 w-2 rounded-full bg-primary shrink-0" aria-hidden />
             )}
           </button>
+          <CalendarSubscribeButton icalPath={scheduleIcalPath} variant="compact" />
           {canManage && (
             <Button
               size="icon"
-              className="h-8 w-8 shrink-0"
+              className="h-9 w-9 shrink-0"
               onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}
             >
               <Plus className="h-4 w-4" />
@@ -380,93 +557,66 @@ export function ScheduleView({
           )}
         </div>
 
-        {/* Row 2: view mode tabs */}
-        <Tabs
-          value={viewMode}
-          onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "day" | "agenda"); }}
-          className="w-full"
-        >
-          <TabsList className="w-full grid grid-cols-4 h-8">
-            <TabsTrigger value="agenda" className="text-xs h-7 px-0">
-              <List className="h-3.5 w-3.5 mr-1" />Agenda
-            </TabsTrigger>
-            <TabsTrigger value="day" className="text-xs h-7 px-0">
-              <Clock className="h-3.5 w-3.5 mr-1" />Day
-            </TabsTrigger>
-            <TabsTrigger value="week" className="text-xs h-7 px-0">
-              <CalendarDays className="h-3.5 w-3.5 mr-1" />Week
-            </TabsTrigger>
-            <TabsTrigger value="month" className="text-xs h-7 px-0">
-              <CalendarIcon className="h-3.5 w-3.5 mr-1" />Month
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {/* Collapsible filters */}
+        {/* Collapsible filters (facility, away games, etc.) — team picker is chips above */}
         {mobileFiltersOpen && (
           <div className="flex flex-col gap-2 p-2 rounded-lg border bg-card animate-in slide-in-from-top-2 fade-in duration-150">
-            <Select
-              value={filterTeamId || "__all__"}
-              onValueChange={(v) => setFilterTeamId(!v || v === "__all__" ? "" : v)}
-              items={{ __all__: "All Teams", ...Object.fromEntries(teams.map((t) => [t.id, t.headCoach ? `${t.name} - ${t.headCoach.name}` : t.name])) }}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="All Teams" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Teams</SelectItem>
-                {teams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    <span className="inline-block h-2 w-2 rounded-full mr-1" style={{ backgroundColor: t.color }} />
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={filterSubFacilityId || "__all__"}
-              onValueChange={(v) => setFilterSubFacilityId(!v || v === "__all__" ? "" : v)}
-              items={{ __all__: "All Facilities", ...Object.fromEntries(facilities.flatMap((f) => f.subFacilities.map((sf) => [sf.id, `${f.name} – ${sf.name}`]))) }}
-            >
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="All Facilities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Facilities</SelectItem>
-                {facilities.map((f) =>
-                  f.subFacilities.map((sf) => (
-                    <SelectItem key={sf.id} value={sf.id} label={`${f.name} – ${sf.name}`}>
-                      {f.name} – {sf.name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <FacilityFilterCombobox
+              facilities={facilities}
+              value={filterSubFacilityId}
+              onValueChange={setFilterSubFacilityId}
+              size="sm"
+            />
+            {lockedTeamId ? (
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs text-muted-foreground">Games</Label>
+                <div className="flex flex-wrap gap-1">
+                  {(["all", "home", "away"] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setGameVenueFilter(k)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                        gameVenueFilter === k
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {k === "all" ? "All" : k === "home" ? "Home" : "Away"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
             <div className="flex items-center gap-1.5">
               <Checkbox id="show-away-m" checked={showAwayGames} onCheckedChange={(c) => setShowAwayGames(!!c)} />
               <Label htmlFor="show-away-m" className="text-xs text-muted-foreground cursor-pointer">Show away games</Label>
             </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ===== DESKTOP TOOLBAR ===== */}
       <div className="hidden md:flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" onClick={navigatePrev}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
-            Today
-          </Button>
-          <Button variant="outline" size="icon" onClick={navigateNext}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        {viewMode !== "agenda" && (
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" onClick={navigatePrev}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
+              Today
+            </Button>
+            <Button variant="outline" size="icon" onClick={navigateNext}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
         <h2 className="text-lg font-semibold min-w-0 truncate">{headerLabel}</h2>
 
         <div className="flex items-center gap-2 ml-auto flex-wrap">
+          {!lockedTeamId && (
           <Select
             value={filterTeamId || "__all__"}
             onValueChange={(v) => setFilterTeamId(!v || v === "__all__" ? "" : v)}
@@ -486,30 +636,17 @@ export function ScheduleView({
               ))}
             </SelectContent>
           </Select>
+          )}
 
-          <Select
-            value={filterSubFacilityId || "__all__"}
-            onValueChange={(v) => setFilterSubFacilityId(!v || v === "__all__" ? "" : v)}
-            items={{ __all__: "All Facilities", ...Object.fromEntries(facilities.flatMap((f) => f.subFacilities.map((sf) => [sf.id, `${f.name} – ${sf.name}`]))) }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All Facilities" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All Facilities</SelectItem>
-              {facilities.map((f) =>
-                f.subFacilities.map((sf) => (
-                  <SelectItem key={sf.id} value={sf.id} label={`${f.name} – ${sf.name}`}>
-                    {f.name} – {sf.name}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
+          <FacilityFilterCombobox
+            facilities={facilities}
+            value={filterSubFacilityId}
+            onValueChange={setFilterSubFacilityId}
+          />
 
           <Tabs
             value={viewMode}
-            onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "day" | "agenda"); }}
+            onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "agenda"); }}
           >
             <TabsList>
               <TabsTrigger value="month">
@@ -518,21 +655,40 @@ export function ScheduleView({
               <TabsTrigger value="week">
                 <CalendarDays className="h-4 w-4 mr-1" />Week
               </TabsTrigger>
-              <TabsTrigger value="day">
-                <Clock className="h-4 w-4 mr-1" />Day
-              </TabsTrigger>
               <TabsTrigger value="agenda">
                 <List className="h-4 w-4 mr-1" />Agenda
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
+          {lockedTeamId ? (
+            <div className="flex items-center gap-1 rounded-lg border border-border/80 bg-muted/20 p-0.5">
+              {(["all", "home", "away"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setGameVenueFilter(k)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                    gameVenueFilter === k
+                      ? "bg-background shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {k === "all" ? "All games" : k === "home" ? "Home" : "Away"}
+                </button>
+              ))}
+            </div>
+          ) : (
           <div className="flex items-center gap-1.5">
             <Checkbox id="show-away-games" checked={showAwayGames} onCheckedChange={(checked) => setShowAwayGames(!!checked)} />
             <Label htmlFor="show-away-games" className="text-xs font-normal text-muted-foreground whitespace-nowrap cursor-pointer">
               Away games
             </Label>
           </div>
+          )}
+
+          <CalendarSubscribeButton icalPath={scheduleIcalPath} />
 
           <TimeSlotRequestsBadge onClick={() => setShowRequests(true)} />
 
@@ -649,76 +805,80 @@ export function ScheduleView({
           </div>
         )}
 
-        {/* Day view */}
-        {viewMode === "day" && (
-          <div className="rounded-lg border bg-card overflow-hidden">
-            {getBlackoutsForDay(currentDate).length > 0 && (
-              <div className="px-3 py-1.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800/50 flex items-center gap-2 flex-wrap">
-                <Ban className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
-                {getBlackoutsForDay(currentDate).map((b) => (
-                  <Badge
-                    key={b.id}
-                    variant="destructive"
-                    className="text-[10px] cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => setSelectedBlackout(b)}
-                  >
-                    Blackout - {b.title}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <div className="relative" style={{ minHeight: `${(DAY_END_HOUR - DAY_START_HOUR) * 64}px` }}>
-              {dayHours.map((hour) => (
-                <div
-                  key={hour}
-                  className="absolute left-0 right-0 border-b border-border/40"
-                  style={{ top: `${(hour - DAY_START_HOUR) * 64}px`, height: 64 }}
-                >
-                  <span className="absolute -top-2.5 left-1 md:left-2 text-[10px] md:text-[11px] text-muted-foreground bg-card px-0.5">
-                    {format(new Date(2000, 0, 1, hour), "h a")}
-                  </span>
-                </div>
-              ))}
-              <div className="ml-10 md:ml-16 mr-1 md:mr-2 relative">
-                {filteredEvents
-                  .filter((e) => isSameDay(parseISO(e.startTime), currentDate))
-                  .map((event) => {
-                    const start = parseISO(event.startTime);
-                    const end = parseISO(event.endTime);
-                    const startMin = start.getHours() * 60 + start.getMinutes();
-                    const durationMin = Math.max(differenceInMinutes(end, start), 30);
-                    const top = ((startMin - DAY_START_HOUR * 60) / 60) * 64;
-                    const height = (durationMin / 60) * 64;
-                    const typeLabel = getTypeLabel(event.type, event.gameVenue);
-                    const bgColor = event.team?.color ?? "#6b7280";
-                    const teamName = event.team?.name ?? "Club Event";
-
-                    return (
-                      <button
-                        key={event.id}
-                        className="absolute left-0 right-0 rounded-lg px-2 md:px-3 py-1 md:py-1.5 text-left text-white text-xs md:text-sm font-medium overflow-hidden hover:opacity-90 transition-opacity shadow-sm"
-                        style={{ top: Math.max(top, 0), height: Math.max(height, 28), backgroundColor: bgColor }}
-                        onClick={(e) => handleEventClick(event, e)}
-                      >
-                        <div className="truncate font-semibold text-[10px] md:text-xs">
-                          {format(start, "h:mm a")} – {format(end, "h:mm a")}
-                        </div>
-                        <div className="truncate text-[10px] md:text-xs opacity-90">
-                          {teamName} · {typeLabel}: {event.title}
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Agenda view */}
         {viewMode === "agenda" && (
-          <div className="rounded-lg md:border bg-card overflow-hidden divide-y">
+          <div>
+            <div className="flex flex-col gap-2 mb-2">
+              <div className="relative w-full">
+                <Search
+                  className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                  aria-hidden
+                />
+                <Input
+                  value={agendaSearch}
+                  onChange={(e) => setAgendaSearch(e.target.value)}
+                  placeholder="Search agenda (title, team, location, type…)"
+                  className="h-9 pl-9 text-sm"
+                  aria-label="Search agenda events"
+                />
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-9 gap-1 w-full sm:w-auto"
+                onClick={() => {
+                  const rows: string[] = [];
+                  for (const day of agendaDays) {
+                    const dayEvts = agendaEventsForDay(day);
+                    const dayBo = getBlackoutsForDay(day);
+                    if (dayEvts.length === 0 && dayBo.length === 0) continue;
+                    const todayTag = isToday(day) ? ' <span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px">Today</span>' : "";
+                    rows.push(`<tr><td colspan="5" style="background:#f5f5f5;padding:8px 12px;font-weight:600;font-size:13px;border-top:2px solid #e5e5e5">${format(day, "EEEE, MMM d, yyyy")}${todayTag}</td></tr>`);
+                    for (const evt of dayEvts) {
+                      const s = parseISO(evt.startTime);
+                      const e = parseISO(evt.endTime);
+                      const tl = getTypeLabel(evt.type, evt.gameVenue);
+                      const team = evt.team?.name ?? "Club Event";
+                      const loc = evt.subFacility ? `${evt.subFacility.facility.name} – ${evt.subFacility.name}` : evt.customLocation ?? "";
+                      const color = evt.team?.color ?? "#6b7280";
+                      rows.push(`<tr>
+                        <td style="padding:6px 8px 6px 12px;width:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color}"></span></td>
+                        <td style="padding:6px 4px;font-weight:500">${evt.title}</td>
+                        <td style="padding:6px 4px;color:#666;white-space:nowrap">${format(s, "h:mm a")} – ${format(e, "h:mm a")}</td>
+                        <td style="padding:6px 4px;color:#666">${team}${loc ? ` · ${loc}` : ""}</td>
+                        <td style="padding:6px 8px"><span style="background:#f0f0f0;padding:2px 8px;border-radius:10px;font-size:11px;white-space:nowrap">${tl}</span></td>
+                      </tr>`);
+                    }
+                  }
+                  const pw = window.open("", "_blank");
+                  if (!pw) return;
+                  pw.document.write(`<!DOCTYPE html><html><head><title>Schedule</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;color:#111}
+h1{font-size:20px;font-weight:700;margin-bottom:4px}
+.sub{font-size:13px;color:#666;margin-bottom:20px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+tr:hover td{background:#fafafa}
+@media print{body{padding:16px}h1{font-size:18px}}
+</style></head><body>
+<h1>Schedule</h1>
+<p class="sub">${headerLabel}${filterTeamId ? ` · ${teams.find(t=>t.id===filterTeamId)?.name ?? ""}` : ""}</p>
+<table>${rows.join("")}</table>
+</body></html>`);
+                  pw.document.close();
+                  pw.onload = () => { pw.print(); };
+                }}
+              >
+                <Download className="h-3 w-3" />
+                Export PDF
+              </Button>
+              </div>
+            </div>
+            <div className="rounded-lg md:border bg-card overflow-hidden divide-y">
             {agendaDays.map((day) => {
-              const dayEvents = getEventsForDay(day);
+              const dayEvents = agendaEventsForDay(day);
               const dayBlackouts = getBlackoutsForDay(day);
               if (dayEvents.length === 0 && dayBlackouts.length === 0) return null;
               const today = isToday(day);
@@ -798,11 +958,14 @@ export function ScheduleView({
                 </div>
               );
             })}
-            {!loading && agendaDays.every((d) => getEventsForDay(d).length === 0 && getBlackoutsForDay(d).length === 0) && (
-              <div className="py-12 text-center text-muted-foreground text-sm">
-                No events in this 2-week period.
+            {!loading && !agendaHasVisibleContent && (
+              <div className="py-12 text-center text-muted-foreground text-sm px-4">
+                {agendaSearchWords.length > 0
+                  ? "No events match your search."
+                  : "No events found for the current filters."}
               </div>
             )}
+            </div>
           </div>
         )}
 
@@ -851,10 +1014,12 @@ export function ScheduleView({
           isAdmin={isAdmin}
           event={editEvent || undefined}
           defaultDate={createDate || undefined}
+          userTeams={userTeams}
+          fixedTeamId={lockedTeamId}
         />
       )}
 
-      {/* Event detail sheet */}
+      {/* Event detail modal */}
       {selectedEvent && (
         <EventDetail
           open={!!selectedEvent}

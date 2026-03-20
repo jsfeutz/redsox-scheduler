@@ -7,6 +7,7 @@ import {
   isOrgAdmin,
 } from "@/lib/auth-helpers";
 import { sendInvitation } from "@/lib/email";
+import { TeamRole } from "@prisma/client";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -65,11 +66,52 @@ export async function POST(req: Request) {
   const existingUser = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
   });
+
   if (existingUser) {
-    return NextResponse.json(
-      { error: "A user with this email already exists" },
-      { status: 409 }
-    );
+    if (!teamId || !teamRole) {
+      return NextResponse.json(
+        { error: "A user with this email already exists" },
+        { status: 409 }
+      );
+    }
+
+    if (existingUser.organizationId !== user.organizationId) {
+      return NextResponse.json(
+        { error: "This user belongs to a different organization" },
+        { status: 409 }
+      );
+    }
+
+    const existingMember = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId, userId: existingUser.id } },
+    });
+    if (existingMember) {
+      await prisma.teamMember.update({
+        where: { id: existingMember.id },
+        data: { role: teamRole as TeamRole },
+      });
+    } else {
+      await prisma.teamMember.create({
+        data: { teamId, userId: existingUser.id, role: teamRole as TeamRole },
+      });
+    }
+
+    if (teamRole === "HEAD_COACH") {
+      await prisma.teamMember.updateMany({
+        where: { teamId, role: TeamRole.HEAD_COACH, userId: { not: existingUser.id } },
+        data: { role: TeamRole.ASSISTANT_COACH },
+      });
+      await prisma.team.update({
+        where: { id: teamId },
+        data: { headCoachId: existingUser.id },
+      });
+    }
+
+    return NextResponse.json({
+      added: true,
+      userName: existingUser.name,
+      teamRole,
+    });
   }
 
   const expiresAt = new Date();
