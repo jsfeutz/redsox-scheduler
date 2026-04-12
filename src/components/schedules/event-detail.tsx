@@ -74,6 +74,7 @@ interface EventData {
   gameVenue?: string | null;
   cancelledByBumpId?: string | null;
   team?: { id: string; name: string; color: string } | null;
+  taggedTeams?: { team: { id: string; name: string; color: string } }[];
   subFacility?: {
     id: string;
     name: string;
@@ -327,6 +328,20 @@ export function EventDetail({
                     <Users className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium">{event.team.name}</p>
+                </div>
+              )}
+
+              {event.taggedTeams && event.taggedTeams.length > 0 && (
+                <div className="flex items-start gap-3">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-muted shrink-0">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Also shown for</p>
+                    <p className="text-sm font-medium">
+                      {event.taggedTeams.map((l) => l.team.name).join(", ")}
+                    </p>
+                  </div>
                 </div>
               )}
 

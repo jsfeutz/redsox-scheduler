@@ -50,7 +50,16 @@ export function FacilityCard({ facility, canManage }: FacilityCardProps) {
               )}
             </span>
             <div className="space-y-1">
-              <CardTitle>{facility.name}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor:
+                      (facility as unknown as { color?: string }).color ?? "#64748b",
+                  }}
+                />
+                {facility.name}
+              </CardTitle>
               {facility.address && (
                 <CardDescription className="flex items-center gap-1">
                   <MapPin className="h-3 w-3" />

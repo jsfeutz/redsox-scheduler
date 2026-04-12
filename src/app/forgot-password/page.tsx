@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
+import { AuthBrandingMark } from "@/components/branding/auth-branding-mark";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -52,9 +53,7 @@ export default function ForgotPasswordPage() {
 
       <Card className="w-full max-w-sm relative z-10 shadow-2xl shadow-black/20 border-border/50 rounded-2xl">
         <CardHeader className="text-center pb-2 pt-8">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white text-xl font-black shadow-lg shadow-primary/30">
-            RR
-          </div>
+          <AuthBrandingMark />
           <CardTitle className="text-2xl font-bold tracking-tight">
             {sent ? "Check Your Email" : "Forgot Password"}
           </CardTitle>

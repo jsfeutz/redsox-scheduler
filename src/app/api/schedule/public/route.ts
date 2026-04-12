@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const teamId = searchParams.get("teamId");
+    const subFacilityIdParam = searchParams.get("subFacilityId");
     const type = searchParams.get("type");
     /** Omit or true = include away games; only `false` hides them (matches public UI default). */
     const showAway = searchParams.get("showAway") !== "false";
@@ -47,6 +48,7 @@ export async function GET(req: Request) {
     const andConditions: Prisma.ScheduleEventWhereInput[] = [
       orgScope,
       { cancelledByBumpId: null },
+      { cancelledAt: null },
     ];
 
     /** Same overlap as GET /api/schedules (interval intersection, not containment). */
@@ -58,6 +60,17 @@ export async function GET(req: Request) {
     }
 
     if (teamId) andConditions.push({ teamId });
+
+    if (subFacilityIdParam) {
+      const subOk = await prisma.subFacility.findFirst({
+        where: {
+          id: subFacilityIdParam,
+          facility: { organizationId: org.id },
+        },
+        select: { id: true },
+      });
+      if (subOk) andConditions.push({ subFacilityId: subFacilityIdParam });
+    }
 
     if (type && type !== "ALL" && EVENT_TYPE_VALUES.includes(type as EventType)) {
       andConditions.push({ type: type as EventType });
@@ -101,7 +114,7 @@ export async function GET(req: Request) {
           select: {
             id: true,
             name: true,
-            facility: { select: { id: true, name: true, googleMapsUrl: true } },
+            facility: { select: { id: true, name: true, color: true, googleMapsUrl: true } },
           },
         },
         gameJobs: {
@@ -115,8 +128,10 @@ export async function GET(req: Request) {
           select: {
             id: true,
             slotsNeeded: true,
+            overrideName: true,
+            overrideDescription: true,
             jobTemplate: {
-              select: { name: true, scope: true, askComfortLevel: true },
+              select: { name: true, description: true, scope: true, askComfortLevel: true },
             },
             assignments: {
               where: { cancelledAt: null },
@@ -146,6 +161,7 @@ export async function GET(req: Request) {
         ? `${e.subFacility.facility.name} – ${e.subFacility.name}`
         : e.customLocation || null,
       facilityId: e.subFacility?.facility.id ?? null,
+      facilityColor: e.subFacility?.facility.color?.toLowerCase() === "#64748b" ? null : (e.subFacility?.facility.color ?? null),
       facilityUrl:
         e.subFacility?.facility.googleMapsUrl ?? e.customLocationUrl ?? null,
       openJobs: e.gameJobs.reduce(
@@ -156,7 +172,8 @@ export async function GET(req: Request) {
         .filter((j) => j.jobTemplate)
         .map((j) => ({
           id: j.id,
-          name: j.jobTemplate!.name,
+          name: j.overrideName || j.jobTemplate!.name,
+          description: j.overrideDescription || j.jobTemplate!.description || null,
           slotsNeeded: j.slotsNeeded,
           filled: j.assignments.length,
           askComfortLevel: j.jobTemplate!.askComfortLevel,

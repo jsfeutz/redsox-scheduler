@@ -28,8 +28,6 @@ import {
 
 const teamSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  ageGroup: z.string().optional(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Invalid color"),
   headCoachId: z.string().optional(),
 });
 
@@ -42,24 +40,15 @@ interface Coach {
 }
 
 interface TeamFormProps {
-  team?: {
-    id: string;
-    name: string;
-    ageGroup: string | null;
-    color: string;
-    headCoachId: string | null;
-  };
   trigger: React.ReactNode;
 }
 
-export function TeamForm({ team, trigger }: TeamFormProps) {
+export function TeamForm({ trigger }: TeamFormProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedCoachId, setSelectedCoachId] = useState<string>(
-    team?.headCoachId ?? ""
-  );
+  const [selectedCoachId, setSelectedCoachId] = useState<string>("");
 
   const {
     register,
@@ -70,10 +59,8 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
   } = useForm<TeamFormValues>({
     resolver: zodResolver(teamSchema),
     defaultValues: {
-      name: team?.name ?? "",
-      ageGroup: team?.ageGroup ?? "",
-      color: team?.color ?? "#3b82f6",
-      headCoachId: team?.headCoachId ?? "",
+      name: "",
+      headCoachId: "",
     },
   });
 
@@ -87,29 +74,21 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
   }, [open]);
 
   useEffect(() => {
-    if (open && team) {
-      reset({
-        name: team.name,
-        ageGroup: team.ageGroup ?? "",
-        color: team.color,
-        headCoachId: team.headCoachId ?? "",
-      });
-      setSelectedCoachId(team.headCoachId ?? "");
+    if (open) {
+      reset({ name: "", headCoachId: "" });
+      setSelectedCoachId("");
     }
-  }, [open, team, reset]);
+  }, [open, reset]);
 
   async function onSubmit(data: TeamFormValues) {
     setLoading(true);
     try {
-      const url = team ? `/api/teams/${team.id}` : "/api/teams";
-      const method = team ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
+      const res = await fetch("/api/teams", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...data,
+          name: data.name.trim(),
           headCoachId: data.headCoachId || null,
-          ageGroup: data.ageGroup || null,
         }),
       });
 
@@ -118,7 +97,7 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
         throw new Error(body.error || "Something went wrong");
       }
 
-      toast.success(team ? "Team updated" : "Team created");
+      toast.success("Team created — set icon, color, and age group in Settings");
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -133,11 +112,10 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
       <DialogTrigger render={<span />}>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{team ? "Edit Team" : "Add Team"}</DialogTitle>
+          <DialogTitle>Add Team</DialogTitle>
           <DialogDescription>
-            {team
-              ? "Update the team details below."
-              : "Fill in the details to create a new team."}
+            Name the team and optionally assign a head coach. Icon, team color,
+            and age group can be set on the team&apos;s Settings tab.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
@@ -154,37 +132,6 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="team-age">Age Group</Label>
-            <Input
-              id="team-age"
-              placeholder="e.g. 12U, 14U, Varsity"
-              {...register("ageGroup")}
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="team-color">Team Color</Label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                id="team-color"
-                className="h-8 w-12 cursor-pointer rounded border border-input bg-transparent"
-                {...register("color")}
-              />
-              <Input
-                className="flex-1"
-                placeholder="#3b82f6"
-                {...register("color")}
-              />
-            </div>
-            {errors.color && (
-              <p className="text-xs text-destructive">
-                {errors.color.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
             <Label>Head Coach</Label>
             <Select
               value={selectedCoachId}
@@ -193,7 +140,10 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
                 setSelectedCoachId(v);
                 setValue("headCoachId", v);
               }}
-              items={{ __none__: "No coach assigned", ...Object.fromEntries(coaches.map((c) => [c.id, c.name])) }}
+              items={{
+                __none__: "No coach assigned",
+                ...Object.fromEntries(coaches.map((c) => [c.id, c.name])),
+              }}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a coach" />
@@ -218,7 +168,7 @@ export function TeamForm({ team, trigger }: TeamFormProps) {
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : team ? "Save Changes" : "Create Team"}
+              {loading ? "Creating..." : "Create Team"}
             </Button>
           </DialogFooter>
         </form>

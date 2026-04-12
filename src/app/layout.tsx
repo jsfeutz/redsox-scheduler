@@ -4,34 +4,68 @@ import AuthSessionProvider from "@/components/providers/session-provider";
 import { VolunteerIdentityProvider } from "@/components/providers/volunteer-identity";
 import { OrgThemeProvider } from "@/components/providers/org-theme-provider";
 import { ServiceWorkerRegister } from "@/components/providers/sw-register";
+import { PwaInstallProvider } from "@/components/providers/pwa-install-provider";
+import { BrandingProvider } from "@/components/branding/branding-context";
 import { Toaster } from "@/components/ui/sonner";
 import { prisma } from "@/lib/prisma";
 
-export const metadata: Metadata = {
-  title: "Rubicon Redsox - Baseball Scheduling",
-  description:
-    "Schedule fields, games, practices, and volunteers for the Rubicon Redsox",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Redsox",
-  },
-  icons: {
-    icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  let brandingIconVersion = 0;
+  let orgName = "Rubicon Redsox";
+  try {
+    const org = await prisma.organization.findFirst({
+      select: { brandingIconVersion: true, name: true },
+    });
+    brandingIconVersion = org?.brandingIconVersion ?? 0;
+    if (org?.name) orgName = org.name;
+  } catch {
+    // DB unavailable during build
+  }
+
+  const q =
+    brandingIconVersion > 0 ? `?v=${brandingIconVersion}` : "";
+  const icon192 =
+    brandingIconVersion > 0
+      ? `/api/branding/icons/192${q}`
+      : "/icon-192.png";
+  const icon512 =
+    brandingIconVersion > 0
+      ? `/api/branding/icons/512${q}`
+      : "/icon-512.png";
+  const apple =
+    brandingIconVersion > 0
+      ? `/api/branding/icons/180${q}`
+      : "/apple-touch-icon.png";
+  const fav32 =
+    brandingIconVersion > 0
+      ? `/api/branding/icons/32${q}`
+      : "/icon-192.png";
+
+  return {
+    title: `${orgName} — Baseball Scheduling`,
+    description: `Schedule fields, games, practices, and volunteers for ${orgName}`,
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: orgName.split(/\s+/)[0] || "Scheduler",
+    },
+    icons: {
+      icon: [
+        { url: fav32, sizes: "32x32", type: "image/png" },
+        { url: icon192, sizes: "192x192", type: "image/png" },
+        { url: icon512, sizes: "512x512", type: "image/png" },
+      ],
+      apple,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#dc2626",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
   viewportFit: "cover",
 };
 
@@ -41,11 +75,22 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let initialTheme = { primaryColor: "#dc2626", themeMode: "light" };
+  let brandingIconVersion = 0;
+  let organizationName = "Rubicon Redsox";
   try {
     const org = await prisma.organization.findFirst({
-      select: { primaryColor: true, themeMode: true },
+      select: {
+        primaryColor: true,
+        themeMode: true,
+        brandingIconVersion: true,
+        name: true,
+      },
     });
-    if (org) initialTheme = org;
+    if (org) {
+      initialTheme = { primaryColor: org.primaryColor, themeMode: org.themeMode };
+      brandingIconVersion = org.brandingIconVersion;
+      if (org.name) organizationName = org.name;
+    }
   } catch {
     // DB unavailable during build — use defaults
   }
@@ -58,13 +103,20 @@ export default async function RootLayout({
     >
       <body className="antialiased">
         <OrgThemeProvider initialTheme={initialTheme}>
-          <AuthSessionProvider>
-            <VolunteerIdentityProvider>
-              {children}
-              <Toaster richColors closeButton position="top-center" />
-              <ServiceWorkerRegister />
-            </VolunteerIdentityProvider>
-          </AuthSessionProvider>
+          <BrandingProvider
+            iconVersion={brandingIconVersion}
+            organizationName={organizationName}
+          >
+            <AuthSessionProvider>
+              <VolunteerIdentityProvider>
+                <PwaInstallProvider>
+                  {children}
+                  <Toaster richColors closeButton position="top-center" />
+                  <ServiceWorkerRegister />
+                </PwaInstallProvider>
+              </VolunteerIdentityProvider>
+            </AuthSessionProvider>
+          </BrandingProvider>
         </OrgThemeProvider>
       </body>
     </html>

@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "NotifyTrigger" ADD VALUE 'UNFILLED_JOBS_24H';

@@ -4,6 +4,7 @@ import { getCurrentUser, canManageTeam } from "@/lib/auth-helpers";
 import { Prisma } from "@prisma/client";
 import { sendSlotRequestResponse } from "@/lib/email";
 import { createAutoJobs } from "@/lib/auto-jobs";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -121,6 +122,8 @@ export async function POST(req: Request, { params }: RouteContext) {
   // Approve: transfer the event to the requesting team
   const eventId = slotRequest.scheduleEventId;
   const newTeamId = slotRequest.requestingTeamId;
+  const previousTeamId = slotRequest.scheduleEvent.teamId;
+  const previousTeamName = slotRequest.scheduleEvent.team?.name ?? null;
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Update the slot request status
@@ -143,6 +146,25 @@ export async function POST(req: Request, { params }: RouteContext) {
       where: { id: eventId },
       data: { teamId: newTeamId },
     });
+  });
+
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: eventId,
+    recurrenceGroupId: slotRequest.scheduleEvent.recurrenceGroupId,
+    action: "TEAM_TRANSFER",
+    actorUserId: user.id,
+    actorLabel: user.name || user.email,
+    summary: `Event transferred via slot request: ${slotRequest.scheduleEvent.title}`,
+    before: {
+      teamId: previousTeamId,
+      teamName: previousTeamName,
+    },
+    after: {
+      teamId: newTeamId,
+      teamName: slotRequest.requestingTeam.name,
+    },
+    meta: { slotRequestId: id },
   });
 
   // Re-run auto job creation for the new team context

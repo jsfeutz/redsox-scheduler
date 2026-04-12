@@ -179,7 +179,7 @@ export function InviteForm({ onCreated, children }: InviteFormProps) {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                An email has been sent. You can also share this link directly. It expires in 7 days.
+                An email has been sent. You can also share this link directly. It expires in 120 days.
               </p>
             </div>
             <DialogFooter>

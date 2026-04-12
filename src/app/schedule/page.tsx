@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { PublicSchedule } from "./public-schedule";
 
@@ -24,6 +25,7 @@ export default async function PublicSchedulePage() {
       select: {
         id: true,
         name: true,
+        color: true,
         subFacilities: {
           select: { id: true, name: true },
           orderBy: { name: "asc" },
@@ -33,5 +35,15 @@ export default async function PublicSchedulePage() {
     }),
   ]);
 
-  return <PublicSchedule teams={teams} facilities={facilities} />;
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-dvh flex items-center justify-center text-muted-foreground text-sm">
+          Loading schedule…
+        </div>
+      }
+    >
+      <PublicSchedule teams={teams} facilities={facilities} />
+    </Suspense>
+  );
 }

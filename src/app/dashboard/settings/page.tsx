@@ -62,6 +62,7 @@ export default async function SettingsPage() {
         requiredVolunteerHours={organization.requiredVolunteerHours}
         primaryColor={organization.primaryColor}
         themeMode={organization.themeMode}
+        brandingIconVersion={organization.brandingIconVersion}
         smsEnabled={organization.smsEnabled}
         reminderHoursBefore={organization.reminderHoursBefore}
         isAdmin={isAdmin}

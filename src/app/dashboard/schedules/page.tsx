@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import {
   getCurrentUser,
@@ -19,16 +20,18 @@ export default async function SchedulesPage() {
   const isWideAccess =
     user.role === UserRole.ADMIN || user.role === UserRole.SCHEDULE_MANAGER;
 
-  const teamWhere = isWideAccess
-    ? { organizationId: user.organizationId }
-    : { organizationId: user.organizationId, id: { in: await getUserTeamIds(user.id) } };
-
   const userTeamIds = isWideAccess ? [] : await getUserTeamIds(user.id);
 
-  const [teams, facilities, seasons, userTeams] = await Promise.all([
+  const [teams, facilities, seasons] = await Promise.all([
     prisma.team.findMany({
-      where: teamWhere,
-      select: { id: true, name: true, color: true, headCoach: { select: { name: true } } },
+      where: { organizationId: user.organizationId },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        icon: true,
+        headCoach: { select: { name: true } },
+      },
       orderBy: { name: "asc" },
     }),
     prisma.facility.findMany({
@@ -46,18 +49,11 @@ export default async function SchedulesPage() {
       select: { id: true, name: true, startDate: true, endDate: true },
       orderBy: { startDate: "desc" },
     }),
-    isWideAccess
-      ? prisma.team.findMany({
-          where: { organizationId: user.organizationId },
-          select: { id: true, name: true, color: true, headCoach: { select: { name: true } } },
-          orderBy: { name: "asc" },
-        })
-      : prisma.team.findMany({
-          where: { id: { in: userTeamIds } },
-          select: { id: true, name: true, color: true, headCoach: { select: { name: true } } },
-          orderBy: { name: "asc" },
-        }),
   ]);
+
+  const userTeams = isWideAccess
+    ? teams
+    : teams.filter((t) => userTeamIds.includes(t.id));
 
   return (
     <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-6">
@@ -67,15 +63,24 @@ export default async function SchedulesPage() {
           Games, practices, and events
         </p>
       </div>
-      <ScheduleView
-        teams={teams}
-        facilities={facilities}
-        seasons={seasons}
-        canManage={canManageSchedule(user.role)}
-        canBump={canBumpEvents(user.role)}
-        isAdmin={isOrgAdmin(user.role)}
-        userTeams={userTeams}
-      />
+      <Suspense
+        fallback={
+          <div className="text-sm text-muted-foreground py-8 text-center">
+            Loading schedule…
+          </div>
+        }
+      >
+        <ScheduleView
+          teams={teams}
+          facilities={facilities}
+          seasons={seasons}
+          canManage={canManageSchedule(user.role)}
+          canBump={canBumpEvents(user.role)}
+          isAdmin={isOrgAdmin(user.role)}
+          userTeams={userTeams}
+          userTeamIds={userTeamIds}
+        />
+      </Suspense>
     </div>
   );
 }

@@ -64,12 +64,12 @@ export function CalendarSubscribeButton({
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+          className="h-11 w-11 min-h-11 min-w-11 shrink-0 touch-manipulation"
           title="Subscribe / live calendar feed"
           aria-label="Subscribe to calendar feed"
           onClick={() => setOpen(!open)}
         >
-          <Rss className="h-4 w-4" />
+          <Rss className="h-5 w-5" />
         </Button>
       ) : (
         <Button

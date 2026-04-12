@@ -24,6 +24,9 @@ import { Textarea } from "@/components/ui/textarea";
 
 const facilitySchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a hex color like #3b82f6"),
   address: z.string().max(500).optional(),
   googleMapsUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   notes: z.string().max(2000).optional(),
@@ -46,11 +49,14 @@ export function FacilityForm({ facility, children }: FacilityFormProps) {
     resolver: zodResolver(facilitySchema),
     defaultValues: {
       name: facility?.name ?? "",
+      color: facility?.color ?? "#64748b",
       address: facility?.address ?? "",
       googleMapsUrl: facility?.googleMapsUrl ?? "",
       notes: facility?.notes ?? "",
     },
   });
+
+  const currentColor = form.watch("color");
 
   async function onSubmit(values: FacilityFormValues) {
     setLoading(true);
@@ -65,8 +71,15 @@ export function FacilityForm({ facility, children }: FacilityFormProps) {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Something went wrong");
+        let message = "Something went wrong";
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+        } catch {
+          const text = await res.text().catch(() => "");
+          if (text) message = text;
+        }
+        throw new Error(message);
       }
 
       toast.success(isEditing ? "Facility updated" : "Facility created");
@@ -105,6 +118,29 @@ export function FacilityForm({ facility, children }: FacilityFormProps) {
             {form.formState.errors.name && (
               <p className="text-xs text-destructive">
                 {form.formState.errors.name.message}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="color">Color</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="color"
+                type="color"
+                className="h-9 w-12 p-1"
+                value={currentColor}
+                onChange={(e) => form.setValue("color", e.target.value, { shouldValidate: true, shouldDirty: true })}
+              />
+              <Input
+                aria-label="Facility color hex"
+                placeholder="#64748b"
+                className="font-mono"
+                {...form.register("color")}
+              />
+            </div>
+            {form.formState.errors.color && (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.color.message}
               </p>
             )}
           </div>

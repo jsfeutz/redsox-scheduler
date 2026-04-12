@@ -12,6 +12,7 @@ import { PublicFooter } from "@/components/public-footer";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { AcceptInviteForm } from "@/components/settings/accept-invite-form";
+import { BrandingMark } from "@/components/branding/branding-mark";
 
 export default async function AcceptInvitePage({
   params,
@@ -91,8 +92,8 @@ export default async function AcceptInvitePage({
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-background" />
       <Card className="w-full max-w-sm relative z-10 rounded-2xl border-border/50 shadow-2xl shadow-black/20">
         <CardHeader className="text-center pb-2 pt-8">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white text-lg font-black shadow-lg shadow-primary/25">
-            RR
+          <div className="mx-auto mb-4 flex justify-center">
+            <BrandingMark variant="invite" />
           </div>
           <CardTitle className="text-xl font-bold">
             Join {invitation.organization.name}

@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import {
   getCurrentUser,
   canBumpEvents,
-  getTeamFilterForUser,
   canManageTeam,
   isOrgAdmin,
   canCreateScheduleEventViaApi,
@@ -11,7 +10,12 @@ import {
 import { Prisma } from "@prisma/client";
 import { RRule, Weekday } from "rrule";
 import { createAutoJobs } from "@/lib/auto-jobs";
-import { notifyScheduleChange, formatEventDate } from "@/lib/notify";
+import { notifyScheduleChange, formatEventDate, dispatchEventNotification } from "@/lib/notify";
+import { syncScheduleEventTaggedTeams } from "@/lib/schedule-event-tags";
+import {
+  logScheduleEventAudit,
+  snapshotScheduleEvent,
+} from "@/lib/schedule-event-audit";
 
 /** Keep selects aligned with older DBs that may not have newer columns yet (run `prisma migrate deploy` for full features). */
 const eventInclude = {
@@ -20,7 +24,13 @@ const eventInclude = {
       id: true,
       name: true,
       color: true,
+      icon: true,
       headCoach: { select: { id: true, name: true, email: true, phone: true } },
+    },
+  },
+  taggedTeams: {
+    include: {
+      team: { select: { id: true, name: true, color: true } },
     },
   },
   subFacility: {
@@ -66,16 +76,18 @@ export async function GET(req: Request) {
     if (!teamInOrg) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
-    if (!(await canManageTeam(user, teamIdParam))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
     where = {
       cancelledByBumpId: null,
-      teamId: teamIdParam,
+      cancelledAt: null,
+      OR: [
+        { teamId: teamIdParam },
+        { taggedTeams: { some: { teamId: teamIdParam } } },
+      ],
     };
   } else {
     where = {
       cancelledByBumpId: null,
+      cancelledAt: null,
       OR: [
         { team: { organizationId: user.organizationId } },
         {
@@ -85,14 +97,6 @@ export async function GET(req: Request) {
         { teamId: null, subFacilityId: null },
       ],
     };
-
-    const teamFilter = await getTeamFilterForUser(user);
-    if (teamFilter) {
-      where.OR = [
-        { ...teamFilter, team: { organizationId: user.organizationId } },
-        { type: "CLUB_EVENT" },
-      ];
-    }
   }
 
   if (subFacilityId) where.subFacilityId = subFacilityId;
@@ -172,7 +176,8 @@ async function tryPriorityBump(
   newTeamId: string | null,
   conflict: { id: string; teamId: string | null; title: string; startTime: Date },
   eventStart: Date,
-  subFacilityId: string | null
+  subFacilityId: string | null,
+  audit: { actorUserId: string; actorLabel: string } | null
 ): Promise<"bumped" | "no-rule" | "lower-priority"> {
   if (!newTeamId || !conflict.teamId) return "no-rule";
 
@@ -215,6 +220,20 @@ async function tryPriorityBump(
       where: { id: conflict.id },
       data: { cancelledByBumpId: "pending" },
     });
+
+    if (audit) {
+      await logScheduleEventAudit(prisma, {
+        organizationId: orgId,
+        scheduleEventId: conflict.id,
+        action: "BUMP_PENDING",
+        actorUserId: audit.actorUserId,
+        actorLabel: audit.actorLabel,
+        summary: `Event marked bumped (priority rule): ${conflict.title}`,
+        meta: {
+          startTime: conflict.startTime.toISOString(),
+        },
+      });
+    }
 
     const bumpedTeam = await prisma.team.findUnique({
       where: { id: conflict.teamId },
@@ -267,7 +286,12 @@ export async function POST(req: Request) {
     manualJobs,
     force,
     forceBlackout,
+    taggedTeamIds: rawTaggedTeamIds,
   } = body;
+
+  const taggedTeamIds = Array.isArray(rawTaggedTeamIds)
+    ? rawTaggedTeamIds.filter((x: unknown) => typeof x === "string")
+    : undefined;
 
   const teamId =
     typeof rawTeamId === "string" && rawTeamId.trim() ? rawTeamId.trim() : null;
@@ -409,6 +433,7 @@ export async function POST(req: Request) {
           where: {
             subFacilityId,
             cancelledByBumpId: null,
+            cancelledAt: null,
             startTime: { lt: occEnd },
             endTime: { gt: occStart },
           },
@@ -445,11 +470,71 @@ export async function POST(req: Request) {
           skipDuplicates: true,
         });
       }
+      await syncScheduleEventTaggedTeams(
+        event.id,
+        event.teamId,
+        user.organizationId,
+        taggedTeamIds
+      );
       createdEvents.push(event);
     }
 
+    const createdIds = createdEvents.map((e) => e.id);
+    const eventsWithTags =
+      createdIds.length > 0
+        ? await prisma.scheduleEvent.findMany({
+            where: { id: { in: createdIds } },
+            include: eventInclude,
+            orderBy: { startTime: "asc" },
+          })
+        : [];
+
+    if (createdEvents.length > 0) {
+      const first = createdEvents[0];
+      await logScheduleEventAudit(prisma, {
+        organizationId: user.organizationId,
+        scheduleEventId: first.id,
+        recurrenceGroupId: first.recurrenceGroupId,
+        action: "CREATE",
+        actorUserId: user.id,
+        actorLabel: user.name || user.email,
+        summary: `Created ${createdEvents.length} recurring event(s): ${first.title}`,
+        after: snapshotScheduleEvent({
+          id: first.id,
+          title: first.title,
+          type: first.type,
+          priority: first.priority,
+          startTime: first.startTime,
+          endTime: first.endTime,
+          notes: first.notes,
+          isRecurring: first.isRecurring,
+          recurrenceRule: first.recurrenceRule,
+          recurrenceGroupId: first.recurrenceGroupId,
+          teamId: first.teamId,
+          subFacilityId: first.subFacilityId,
+          seasonId: first.seasonId,
+          customLocation: first.customLocation,
+          customLocationUrl: first.customLocationUrl,
+          gameVenue: first.gameVenue,
+          noJobs: first.noJobs,
+          cancelledAt: first.cancelledAt,
+          cancelledBy: first.cancelledBy,
+          cancelledByBumpId: first.cancelledByBumpId,
+        }),
+        meta: {
+          batch: true,
+          count: createdEvents.length,
+          eventIds: createdEvents.map((e) => e.id),
+        },
+      });
+    }
+
     return NextResponse.json(
-      { events: createdEvents, count: createdEvents.length, recurrenceGroupId },
+      {
+        events: eventsWithTags,
+        count: eventsWithTags.length,
+        recurrenceGroupId: createdEvents[0]?.recurrenceGroupId,
+      },
       { status: 201 }
     );
   }
@@ -459,6 +544,7 @@ export async function POST(req: Request) {
       where: {
         subFacilityId,
         cancelledByBumpId: null,
+        cancelledAt: null,
         startTime: { lt: newEnd },
         endTime: { gt: newStart },
       },
@@ -467,6 +553,37 @@ export async function POST(req: Request) {
 
     if (conflict) {
       if (force && canBumpEvents(user.role)) {
+        await logScheduleEventAudit(prisma, {
+          organizationId: user.organizationId,
+          scheduleEventId: conflict.id,
+          action: "DELETE",
+          actorUserId: user.id,
+          actorLabel: user.name || user.email,
+          summary: `Event deleted (forced slot): ${conflict.title}`,
+          before: snapshotScheduleEvent({
+            id: conflict.id,
+            title: conflict.title,
+            type: conflict.type,
+            priority: conflict.priority,
+            startTime: conflict.startTime,
+            endTime: conflict.endTime,
+            notes: conflict.notes,
+            isRecurring: conflict.isRecurring,
+            recurrenceRule: conflict.recurrenceRule,
+            recurrenceGroupId: conflict.recurrenceGroupId,
+            teamId: conflict.teamId,
+            subFacilityId: conflict.subFacilityId,
+            seasonId: conflict.seasonId,
+            customLocation: conflict.customLocation,
+            customLocationUrl: conflict.customLocationUrl,
+            gameVenue: conflict.gameVenue,
+            noJobs: conflict.noJobs,
+            cancelledAt: conflict.cancelledAt,
+            cancelledBy: conflict.cancelledBy,
+            cancelledByBumpId: conflict.cancelledByBumpId,
+          }),
+          meta: { reason: "force_bump_new_event" },
+        });
         await prisma.scheduleEvent.delete({ where: { id: conflict.id } });
       } else {
         const bumpResult = await tryPriorityBump(
@@ -474,7 +591,8 @@ export async function POST(req: Request) {
           teamId || null,
           { id: conflict.id, teamId: conflict.teamId, title: conflict.title, startTime: conflict.startTime },
           newStart,
-          subFacilityId
+          subFacilityId,
+          { actorUserId: user.id, actorLabel: user.name || user.email }
         );
         if (bumpResult === "bumped") {
           // event was bumped, continue creating
@@ -498,8 +616,23 @@ export async function POST(req: Request) {
     include: eventInclude,
   });
 
+  await syncScheduleEventTaggedTeams(
+    event.id,
+    event.teamId,
+    user.organizationId,
+    taggedTeamIds
+  );
+  const eventWithTags = await prisma.scheduleEvent.findUnique({
+    where: { id: event.id },
+    include: eventInclude,
+  });
+
   if (!noJobs) {
-    await createAutoJobs({ ...event, gameVenue: event.gameVenue, organizationId: user.organizationId });
+    await createAutoJobs({
+      ...(eventWithTags ?? event),
+      gameVenue: event.gameVenue,
+      organizationId: user.organizationId,
+    });
   }
 
   if (Array.isArray(manualJobs) && manualJobs.length > 0 && !noJobs) {
@@ -514,7 +647,52 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json(event, { status: 201 });
+  dispatchEventNotification({
+    eventId: event.id,
+    trigger: "EVENT_ADDED",
+    organizationId: user.organizationId,
+    teamId: event.teamId,
+    eventTitle: event.title,
+    eventDate: formatEventDate(new Date(event.startTime)),
+    teamName: event.team?.name ?? null,
+    location: event.subFacility
+      ? `${event.subFacility.facility.name} – ${event.subFacility.name}`
+      : event.customLocation ?? null,
+  }).catch((err) => console.error("[NOTIFY] Dispatch EVENT_ADDED failed:", err));
+
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: event.id,
+    recurrenceGroupId: event.recurrenceGroupId,
+    action: "CREATE",
+    actorUserId: user.id,
+    actorLabel: user.name || user.email,
+    summary: `Created event: ${event.title}`,
+    after: snapshotScheduleEvent({
+      id: event.id,
+      title: event.title,
+      type: event.type,
+      priority: event.priority,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      notes: event.notes,
+      isRecurring: event.isRecurring,
+      recurrenceRule: event.recurrenceRule,
+      recurrenceGroupId: event.recurrenceGroupId,
+      teamId: event.teamId,
+      subFacilityId: event.subFacilityId,
+      seasonId: event.seasonId,
+      customLocation: event.customLocation,
+      customLocationUrl: event.customLocationUrl,
+      gameVenue: event.gameVenue,
+      noJobs: event.noJobs,
+      cancelledAt: event.cancelledAt,
+      cancelledBy: event.cancelledBy,
+      cancelledByBumpId: event.cancelledByBumpId,
+    }),
+  });
+
+  return NextResponse.json(eventWithTags ?? event, { status: 201 });
   } catch (err) {
     console.error("[POST /api/schedules]", err);
     return NextResponse.json(

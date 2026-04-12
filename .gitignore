@@ -45,4 +45,7 @@ lightsail-deploy.json
 *.tsbuildinfo
 next-env.d.ts
 
+# org-uploaded branding (PWA / favicon assets)
+/uploads/
+
 /src/generated/prisma

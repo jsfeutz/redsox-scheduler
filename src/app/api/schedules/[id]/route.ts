@@ -8,11 +8,21 @@ import {
   canMutateExistingScheduleEvent,
 } from "@/lib/auth-helpers";
 import { Prisma } from "@prisma/client";
-import { notifyScheduleChange, formatEventDate } from "@/lib/notify";
+import { formatEventDate, dispatchEventNotification, notifySignedUpVolunteers } from "@/lib/notify";
 import { createAutoJobs } from "@/lib/auto-jobs";
+import { syncScheduleEventTaggedTeams } from "@/lib/schedule-event-tags";
+import {
+  logScheduleEventAudit,
+  snapshotScheduleEvent,
+} from "@/lib/schedule-event-audit";
 
 const eventInclude = {
   team: { select: { id: true, name: true, color: true } },
+  taggedTeams: {
+    include: {
+      team: { select: { id: true, name: true, color: true } },
+    },
+  },
   subFacility: {
     include: {
       facility: { select: { id: true, name: true, googleMapsUrl: true } },
@@ -98,6 +108,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
     gameVenue,
     noJobs,
     force,
+    taggedTeamIds: rawTaggedTeamIds,
   } = body;
 
   const isClubEvent = type === "CLUB_EVENT";
@@ -140,6 +151,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
         subFacilityId,
         id: { not: id },
         cancelledByBumpId: null,
+        cancelledAt: null,
         startTime: { lt: newEnd },
         endTime: { gt: newStart },
       },
@@ -148,6 +160,37 @@ export async function PUT(req: Request, { params }: RouteContext) {
 
     if (conflict) {
       if (force && canBumpEvents(user.role)) {
+        await logScheduleEventAudit(prisma, {
+          organizationId: user.organizationId,
+          scheduleEventId: conflict.id,
+          action: "DELETE",
+          actorUserId: user.id,
+          actorLabel: user.name || user.email,
+          summary: `Event deleted (forced slot on edit): ${conflict.title}`,
+          before: snapshotScheduleEvent({
+            id: conflict.id,
+            title: conflict.title,
+            type: conflict.type,
+            priority: conflict.priority,
+            startTime: conflict.startTime,
+            endTime: conflict.endTime,
+            notes: conflict.notes,
+            isRecurring: conflict.isRecurring,
+            recurrenceRule: conflict.recurrenceRule,
+            recurrenceGroupId: conflict.recurrenceGroupId,
+            teamId: conflict.teamId,
+            subFacilityId: conflict.subFacilityId,
+            seasonId: conflict.seasonId,
+            customLocation: conflict.customLocation,
+            customLocationUrl: conflict.customLocationUrl,
+            gameVenue: conflict.gameVenue,
+            noJobs: conflict.noJobs,
+            cancelledAt: conflict.cancelledAt,
+            cancelledBy: conflict.cancelledBy,
+            cancelledByBumpId: conflict.cancelledByBumpId,
+          }),
+          meta: { reason: "force_bump_edit_event", editingEventId: id },
+        });
         await prisma.scheduleEvent.delete({ where: { id: conflict.id } });
       } else {
         return NextResponse.json(
@@ -159,6 +202,29 @@ export async function PUT(req: Request, { params }: RouteContext) {
   }
 
   const wantsCustomLoc = (isClubEvent && !subFacilityId) || isAwayGame;
+  const beforeSnap = snapshotScheduleEvent({
+    id: existing.id,
+    title: existing.title,
+    type: existing.type,
+    priority: existing.priority,
+    startTime: existing.startTime,
+    endTime: existing.endTime,
+    notes: existing.notes,
+    isRecurring: existing.isRecurring,
+    recurrenceRule: existing.recurrenceRule,
+    recurrenceGroupId: existing.recurrenceGroupId,
+    teamId: existing.teamId,
+    subFacilityId: existing.subFacilityId,
+    seasonId: existing.seasonId,
+    customLocation: existing.customLocation,
+    customLocationUrl: existing.customLocationUrl,
+    gameVenue: existing.gameVenue,
+    noJobs: existing.noJobs,
+    cancelledAt: existing.cancelledAt,
+    cancelledBy: existing.cancelledBy,
+    cancelledByBumpId: existing.cancelledByBumpId,
+  });
+
   const event = await prisma.scheduleEvent.update({
     where: { id },
     data: {
@@ -179,6 +245,39 @@ export async function PUT(req: Request, { params }: RouteContext) {
       noJobs: !!noJobs,
     },
     include: eventInclude,
+  });
+
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: id,
+    recurrenceGroupId: event.recurrenceGroupId,
+    action: "UPDATE",
+    actorUserId: user.id,
+    actorLabel: user.name || user.email,
+    summary: `Updated event: ${event.title}`,
+    before: beforeSnap,
+    after: snapshotScheduleEvent({
+      id: event.id,
+      title: event.title,
+      type: event.type,
+      priority: event.priority,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      notes: event.notes,
+      isRecurring: event.isRecurring,
+      recurrenceRule: event.recurrenceRule,
+      recurrenceGroupId: event.recurrenceGroupId,
+      teamId: event.teamId,
+      subFacilityId: event.subFacilityId,
+      seasonId: event.seasonId,
+      customLocation: event.customLocation,
+      customLocationUrl: event.customLocationUrl,
+      gameVenue: event.gameVenue,
+      noJobs: event.noJobs,
+      cancelledAt: event.cancelledAt,
+      cancelledBy: event.cancelledBy,
+      cancelledByBumpId: event.cancelledByBumpId,
+    }),
   });
 
   const noJobsEnabled = !!noJobs;
@@ -209,14 +308,46 @@ export async function PUT(req: Request, { params }: RouteContext) {
     const loc = event.subFacility
       ? `${event.subFacility.facility.name} – ${event.subFacility.name}`
       : undefined;
-    notifyScheduleChange({
+
+    dispatchEventNotification({
       eventId: id,
-      changeType: "updated",
+      trigger: "EVENT_TIME_CHANGED",
+      organizationId: user.organizationId,
+      teamId: teamId || null,
       eventTitle: title.trim(),
+      eventDate: formatEventDate(newStart),
+      oldTime: formatEventDate(existing.startTime),
+      newTime: formatEventDate(newStart),
+      teamName: event.team?.name,
+      location: loc,
+    }).catch((err) => console.error("[NOTIFY] Dispatch EVENT_TIME_CHANGED failed:", err));
+
+    notifySignedUpVolunteers({
+      eventId: id,
+      changeType: "time_changed",
+      eventTitle: title.trim(),
+      eventDate: formatEventDate(newStart),
       oldTime: formatEventDate(existing.startTime),
       newTime: formatEventDate(newStart),
       location: loc,
-    }).catch((err) => console.error("[NOTIFY] Schedule change failed:", err));
+    }).catch((err) => console.error("[NOTIFY] Volunteer time-change notify failed:", err));
+  }
+
+  if ("taggedTeamIds" in body) {
+    const taggedTeamIds = Array.isArray(rawTaggedTeamIds)
+      ? rawTaggedTeamIds.filter((x: unknown) => typeof x === "string")
+      : [];
+    await syncScheduleEventTaggedTeams(
+      id,
+      teamId || null,
+      user.organizationId,
+      taggedTeamIds
+    );
+    const refreshed = await prisma.scheduleEvent.findUnique({
+      where: { id },
+      include: eventInclude,
+    });
+    return NextResponse.json(refreshed ?? event);
   }
 
   return NextResponse.json(event);
@@ -252,13 +383,96 @@ export async function DELETE(req: Request, { params }: RouteContext) {
     );
   }
 
-  notifyScheduleChange({
+  const fullEvent = await prisma.scheduleEvent.findUnique({
+    where: { id },
+    include: {
+      team: { select: { name: true } },
+      subFacility: { include: { facility: { select: { name: true } } } },
+      gameJobs: {
+        select: {
+          jobTemplate: { select: { name: true } },
+          assignments: {
+            where: { cancelledAt: null },
+            select: { name: true, email: true },
+          },
+        },
+      },
+    },
+  });
+
+  const teamName = fullEvent?.team?.name ?? null;
+  const location = fullEvent?.subFacility
+    ? `${fullEvent.subFacility.facility.name} – ${fullEvent.subFacility.name}`
+    : null;
+
+  const volunteers = (fullEvent?.gameJobs ?? []).flatMap((j) =>
+    j.assignments.map((a) => ({
+      jobName: j.jobTemplate.name,
+      name: a.name,
+      email: a.email,
+    }))
+  );
+
+  dispatchEventNotification({
+    eventId: id,
+    trigger: "EVENT_CANCELLED",
+    organizationId: user.organizationId,
+    teamId: existing.teamId,
+    eventTitle: existing.title,
+    eventDate: formatEventDate(existing.startTime),
+    teamName,
+    location,
+    volunteers,
+  }).catch((err) => console.error("[NOTIFY] Dispatch EVENT_CANCELLED failed:", err));
+
+  notifySignedUpVolunteers({
     eventId: id,
     changeType: "cancelled",
     eventTitle: existing.title,
-  }).catch((err) => console.error("[NOTIFY] Schedule cancel notify failed:", err));
+    eventDate: formatEventDate(existing.startTime),
+    location,
+  }).catch((err) => console.error("[NOTIFY] Volunteer cancellation notify failed:", err));
 
-  await prisma.scheduleEvent.delete({ where: { id } });
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: id,
+    recurrenceGroupId: existing.recurrenceGroupId,
+    action: "REMOVE",
+    actorUserId: user.id,
+    actorLabel: user.name || user.email,
+    summary: `Cancelled event: ${existing.title}`,
+    before: snapshotScheduleEvent({
+      id: existing.id,
+      title: existing.title,
+      type: existing.type,
+      priority: existing.priority,
+      startTime: existing.startTime,
+      endTime: existing.endTime,
+      notes: existing.notes,
+      isRecurring: existing.isRecurring,
+      recurrenceRule: existing.recurrenceRule,
+      recurrenceGroupId: existing.recurrenceGroupId,
+      teamId: existing.teamId,
+      subFacilityId: existing.subFacilityId,
+      seasonId: existing.seasonId,
+      customLocation: existing.customLocation,
+      customLocationUrl: existing.customLocationUrl,
+      gameVenue: existing.gameVenue,
+      noJobs: existing.noJobs,
+      cancelledAt: existing.cancelledAt,
+      cancelledBy: existing.cancelledBy,
+      cancelledByBumpId: existing.cancelledByBumpId,
+    }),
+    meta: { softCancel: true },
+  });
+
+  await prisma.scheduleEvent.update({
+    where: { id },
+    data: {
+      cancelledAt: new Date(),
+      cancelledBy: user.name || user.email,
+    },
+  });
 
   return NextResponse.json({ success: true });
 }

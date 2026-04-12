@@ -8,7 +8,7 @@ export default function TermsPage() {
       <div className="mx-auto max-w-3xl px-4 py-12 sm:py-16">
         <Link
           href="/"
-          className="text-sm text-muted-foreground hover:text-primary mb-8 inline-block"
+          className="text-base text-muted-foreground hover:text-primary mb-8 inline-block"
         >
           &larr; Back
         </Link>
@@ -16,11 +16,11 @@ export default function TermsPage() {
         <h1 className="text-3xl font-bold tracking-tight mb-2">
           Terms and Conditions
         </h1>
-        <p className="text-sm text-muted-foreground mb-8">
+        <p className="text-base text-muted-foreground mb-8">
           Last updated: March 15, 2026
         </p>
 
-        <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6 text-sm leading-relaxed text-muted-foreground">
+        <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6 text-base leading-relaxed text-muted-foreground">
           <section>
             <h2 className="text-lg font-semibold text-foreground">
               1. Acceptance of Terms
@@ -125,7 +125,7 @@ export default function TermsPage() {
           </section>
         </div>
 
-        <div className="mt-10 pt-6 border-t border-border text-xs text-muted-foreground flex gap-4">
+        <div className="mt-10 pt-6 border-t border-border text-sm text-muted-foreground flex gap-4">
           <Link href="/privacy" className="hover:text-primary">
             Privacy Policy
           </Link>

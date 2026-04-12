@@ -122,7 +122,7 @@ export default async function VolunteerPage() {
                           </div>
 
                           <div className="space-y-3 border-t border-border/50 pt-4">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                               Available Shifts
                             </p>
                             {event.volunteerSlots.map((slot) => (

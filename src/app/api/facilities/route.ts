@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { name, address, googleMapsUrl, notes } = body;
+  const { name, address, googleMapsUrl, notes, color } = body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json(
@@ -43,6 +43,7 @@ export async function POST(req: Request) {
   const facility = await prisma.facility.create({
     data: {
       name: name.trim(),
+      color: typeof color === "string" && color.trim() ? color.trim() : "#64748b",
       address: address?.trim() || null,
       googleMapsUrl: googleMapsUrl?.trim() || null,
       notes: notes?.trim() || null,

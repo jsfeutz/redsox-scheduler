@@ -60,7 +60,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { gameJobId, name, email, playerName, phone, comfortLevel } = body;
+    const { gameJobId, name, email, playerName, phone, comfortLevel, reminderHoursBefore } = body;
 
     if (!gameJobId || !name || !email) {
       return NextResponse.json(
@@ -131,6 +131,9 @@ export async function POST(req: Request) {
             : null,
         playerVolunteerId: matchedVolunteer?.id || null,
         hoursEarned,
+        reminderHoursBefore: typeof reminderHoursBefore === "number" && reminderHoursBefore > 0
+          ? reminderHoursBefore
+          : null,
       },
       include: {
         gameJob: {
@@ -184,6 +187,43 @@ export async function POST(req: Request) {
       });
     } catch (err) {
       console.error("[NOTIFY] Failed to send signup notification:", err);
+    }
+
+    if (
+      assignment.reminderHoursBefore &&
+      assignment.reminderHoursBefore > 0 &&
+      assignment.gameJob.scheduleEvent?.startTime
+    ) {
+      try {
+        const { enqueue } = await import("@/lib/queue");
+        const startTime = new Date(assignment.gameJob.scheduleEvent.startTime);
+        const sendAt = new Date(startTime.getTime() - assignment.reminderHoursBefore * 60 * 60 * 1000);
+        if (sendAt > new Date()) {
+          const evt = assignment.gameJob.scheduleEvent;
+          const location = evt?.subFacility
+            ? `${evt.subFacility.facility.name} – ${evt.subFacility.name}`
+            : "";
+          await enqueue(
+            "signup-reminder",
+            {
+              assignmentId: assignment.id,
+              name: name.trim(),
+              email: emailTrimmed,
+              phone: phone?.trim() || null,
+              jobName: assignment.gameJob.jobTemplate.name,
+              eventTitle: evt?.title ?? "Event",
+              eventDate: format(startTime, "EEEE, MMMM d 'at' h:mm a"),
+              location,
+              hoursUntil: assignment.reminderHoursBefore,
+              eventId: undefined,
+              gameJobId: assignment.gameJobId,
+            },
+            { startAfter: sendAt }
+          );
+        }
+      } catch (err) {
+        console.error("[QUEUE] Failed to enqueue signup reminder:", err);
+      }
     }
 
     return NextResponse.json(

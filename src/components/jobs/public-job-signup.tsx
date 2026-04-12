@@ -27,6 +27,7 @@ import {
 interface PublicJobSignupProps {
   jobId: string;
   jobName: string;
+  jobDescription?: string | null;
   eventTitle?: string;
   eventDate?: string;
   eventTime?: string;
@@ -39,6 +40,7 @@ interface PublicJobSignupProps {
 export function PublicJobSignup({
   jobId,
   jobName,
+  jobDescription = null,
   eventTitle,
   eventDate,
   eventTime,
@@ -60,10 +62,16 @@ export function PublicJobSignup({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  /** Required when phone is provided (AWS / carrier opt-in alignment). */
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [playerName, setPlayerName] = useState("");
   const [comfortLevel, setComfortLevel] = useState("");
+  const [reminderHours, setReminderHours] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneProvided = phoneDigits.length >= 10;
 
   useEffect(() => {
     if (identity) {
@@ -82,6 +90,10 @@ export function PublicJobSignup({
       toast.error("Please select your comfort level");
       return;
     }
+    if (phoneProvided && !smsOptIn) {
+      toast.error("Check the SMS consent box to sign up with a phone number");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -95,6 +107,7 @@ export function PublicJobSignup({
           phone: phone.trim() || undefined,
           playerName: playerName.trim() || undefined,
           ...(askComfortLevel && comfortLevel ? { comfortLevel } : {}),
+          ...(reminderHours ? { reminderHoursBefore: parseInt(reminderHours, 10) } : {}),
         }),
       });
 
@@ -128,7 +141,7 @@ export function PublicJobSignup({
     return (
       <div className="flex items-center gap-1.5 text-emerald-500">
         <CheckCircle2 className="h-4 w-4 shrink-0" />
-        <span className="text-xs font-medium">Signed up!</span>
+        <span className="text-sm font-medium">Signed up!</span>
       </div>
     );
   }
@@ -136,7 +149,7 @@ export function PublicJobSignup({
   const formContent = (
     <form onSubmit={handleSubmit} className="grid gap-3 px-1">
       <div className="grid gap-1.5">
-        <Label htmlFor={`job-name-${jobId}`} className="text-sm font-medium">
+        <Label htmlFor={`job-name-${jobId}`} className="text-base font-medium">
           Your Name
         </Label>
         <Input
@@ -145,11 +158,11 @@ export function PublicJobSignup({
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          className="h-11 rounded-xl text-sm"
+          className="h-11 rounded-xl text-base"
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor={`job-email-${jobId}`} className="text-sm font-medium">
+        <Label htmlFor={`job-email-${jobId}`} className="text-base font-medium">
           Email
         </Label>
         <Input
@@ -159,11 +172,11 @@ export function PublicJobSignup({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="h-11 rounded-xl text-sm"
+          className="h-11 rounded-xl text-base"
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor={`job-phone-${jobId}`} className="text-sm font-medium">
+        <Label htmlFor={`job-phone-${jobId}`} className="text-base font-medium">
           Phone <span className="text-muted-foreground font-normal">(optional)</span>
         </Label>
         <Input
@@ -171,25 +184,59 @@ export function PublicJobSignup({
           type="tel"
           placeholder="(920) 555-1234"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="h-11 rounded-xl text-sm"
+          onChange={(e) => {
+            setPhone(e.target.value);
+            if (e.target.value.replace(/\D/g, "").length < 10) setSmsOptIn(false);
+          }}
+          className="h-11 rounded-xl text-base"
         />
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
-          By providing your phone number, you consent to receive SMS notifications about your volunteer shift
-          (confirmations, reminders, and changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
-          Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
-        </p>
+        {phoneProvided && (
+          <label className="flex items-start gap-2.5 cursor-pointer text-sm leading-relaxed rounded-xl border border-border/80 bg-muted/30 p-3">
+            <input
+              type="checkbox"
+              checked={smsOptIn}
+              onChange={(e) => setSmsOptIn(e.target.checked)}
+              className="mt-1 h-5 w-5 shrink-0 accent-primary"
+            />
+            <span>
+              <strong className="text-foreground">I agree to receive SMS text messages</strong> from
+              Rubicon Redsox at this mobile number for <strong className="text-foreground">volunteer
+              notifications only</strong> (signup confirmations, shift reminders, schedule changes, and
+              cancellations). Message frequency is typically <strong className="text-foreground">2–5
+              messages per week</strong> during the baseball season. <strong className="text-foreground">Message
+              and data rates may apply.</strong> Reply <strong className="text-foreground">STOP</strong> to
+              opt out at any time. See{" "}
+              <a href="/sms-consent" className="text-primary underline font-medium">
+                SMS consent
+              </a>{" "}
+              and{" "}
+              <a href="/privacy" className="text-primary underline font-medium">
+                Privacy
+              </a>
+              .
+            </span>
+          </label>
+        )}
+        {!phoneProvided && (
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Phone is optional. If you add a number, you&apos;ll confirm SMS consent before signing up.
+            {" "}
+            <a href="/sms-consent" className="underline">SMS consent</a>
+            {" · "}
+            <a href="/business-verification" className="underline">Program info</a>
+          </p>
+        )}
       </div>
       {askComfortLevel && (
         <div className="grid gap-1.5">
-          <Label className="text-sm font-medium">
+          <Label className="text-base font-medium">
             Comfort level for this role
           </Label>
           <div className="grid gap-2 rounded-xl border border-border/60 p-3 bg-muted/20">
             {COMFORT_LEVEL_OPTIONS.map((opt) => (
               <label
                 key={opt.value}
-                className="flex items-start gap-2.5 cursor-pointer text-sm"
+                className="flex items-start gap-2.5 cursor-pointer text-base"
               >
                 <input
                   type="radio"
@@ -205,8 +252,25 @@ export function PublicJobSignup({
           </div>
         </div>
       )}
+      {eventDate && (
+        <div className="grid gap-1.5">
+          <Label className="text-base font-medium">
+            Remind me before event
+          </Label>
+          <select
+            value={reminderHours}
+            onChange={(e) => setReminderHours(e.target.value)}
+            className="h-11 rounded-xl text-base border border-input bg-background px-3"
+          >
+            <option value="">No reminder</option>
+            <option value="2">2 hours before</option>
+            <option value="24">24 hours before</option>
+            <option value="48">48 hours before</option>
+          </select>
+        </div>
+      )}
       <div className="grid gap-1.5">
-        <Label htmlFor={`job-player-${jobId}`} className="text-sm font-medium">
+        <Label htmlFor={`job-player-${jobId}`} className="text-base font-medium">
           Player Name
         </Label>
         <Input
@@ -214,7 +278,7 @@ export function PublicJobSignup({
           placeholder="Who are you volunteering for?"
           value={playerName}
           onChange={(e) => setPlayerName(e.target.value)}
-          className="h-11 rounded-xl text-sm"
+          className="h-11 rounded-xl text-base"
         />
       </div>
       <div className="flex gap-2 pt-1">
@@ -246,18 +310,18 @@ export function PublicJobSignup({
 
   const jobInfoBanner = (eventDate || eventTime) ? (
     <div className="rounded-xl bg-muted/50 border border-border/50 p-3 space-y-1">
-      <p className="font-semibold text-sm">{jobName}</p>
-      {eventTitle && <p className="text-xs text-muted-foreground">{eventTitle}</p>}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <p className="font-semibold text-base">{jobName}</p>
+      {eventTitle && <p className="text-sm text-muted-foreground">{eventTitle}</p>}
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
         {eventDate && (
           <span className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
+            <Calendar className="h-4 w-4" />
             {eventDate}
           </span>
         )}
         {eventTime && (
           <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
+            <Clock className="h-4 w-4" />
             {eventTime}
           </span>
         )}
@@ -268,7 +332,7 @@ export function PublicJobSignup({
   return (
     <>
       <Button
-        className="shrink-0 rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-transform h-9 md:h-10 px-4 md:px-5 text-xs md:text-sm"
+        className="shrink-0 rounded-xl shadow-md shadow-primary/15 active:scale-95 transition-transform min-h-11 h-11 md:h-12 px-4 md:px-5 text-sm md:text-base"
         onClick={() => setOpen(true)}
       >
         Sign Up
@@ -279,7 +343,11 @@ export function PublicJobSignup({
           <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto" showCloseButton>
             <SheetHeader>
               <SheetTitle>Volunteer Sign Up</SheetTitle>
-              <SheetDescription className="sr-only">Sign up form</SheetDescription>
+              <SheetDescription>
+                {jobDescription && jobDescription.trim()
+                  ? jobDescription.trim()
+                  : "Fill in your details to volunteer for this job."}
+              </SheetDescription>
             </SheetHeader>
             <div className="pb-6 pt-2 space-y-3 px-1">
               {jobInfoBanner}
@@ -293,7 +361,9 @@ export function PublicJobSignup({
             <DialogHeader>
               <DialogTitle>Volunteer Sign Up</DialogTitle>
               <DialogDescription>
-                Fill in your details to volunteer for this job.
+                {jobDescription && jobDescription.trim()
+                  ? jobDescription.trim()
+                  : "Fill in your details to volunteer for this job."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">

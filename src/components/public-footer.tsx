@@ -15,6 +15,10 @@ export function PublicFooter() {
         <Link href="/sms-consent" className="hover:underline">
           SMS Consent
         </Link>
+        <span className="text-border">·</span>
+        <Link href="/install" className="hover:underline">
+          Install app
+        </Link>
       </div>
       <p className="text-xs text-muted-foreground">
         Rubicon Redsox Baseball Club

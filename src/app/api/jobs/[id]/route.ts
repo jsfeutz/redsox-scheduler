@@ -130,7 +130,12 @@ export async function DELETE(
     );
   }
 
-  await prisma.gameJob.delete({ where: { id } });
+  // Soft-remove so it disappears from boards/reports without losing history.
+  const gameJob = await prisma.gameJob.update({
+    where: { id },
+    data: { disabled: true },
+    select: { id: true, disabled: true },
+  });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, job: gameJob });
 }

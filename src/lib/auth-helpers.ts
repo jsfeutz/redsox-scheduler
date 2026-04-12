@@ -94,6 +94,11 @@ export function isOrgAdmin(role: UserRole): boolean {
   return role === UserRole.ADMIN;
 }
 
+/** Org-wide schedule event audit report (Reports → Event audit). */
+export function canViewEventAudit(role: UserRole): boolean {
+  return role === UserRole.ADMIN || role === UserRole.SCHEDULE_MANAGER;
+}
+
 // --------------- Team-level helpers ---------------
 
 export async function getUserTeamIds(userId: string): Promise<string[]> {

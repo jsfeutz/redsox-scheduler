@@ -118,6 +118,28 @@ aws lightsail create-container-service-deployment \
 
 **Critical:** `NEXTAUTH_URL` controls where auth redirects go. If set wrong, the login page will redirect to the wrong domain.
 
+**Resend / SMTP 403 on production:** Resend only accepts mail when (1) `SMTP_PASS` is a valid API key, (2) **`SMTP_FROM` uses an address on a domain you have verified** in the [Resend Domains](https://resend.com/domains) dashboard. Use a display name plus angle brackets, e.g. `Rubicon Redsox Notification <noreply@rubiconredsox.com>`. A `From:` domain that is not verified (or only verified on another project) typically fails with **403** via SMTP. For quick tests without your domain, use `onboarding@resend.dev` as the from address. After deploy, check container logs for `[EMAIL] SMTP send failed` lines (response body often states the policy violation).
+
+**Resend inbound / `support@rubiconredsox.com`:** Sending from `@rubiconredsox.com` is not the same as **receiving**. In [Resend → Receiving](https://resend.com/emails/receiving), add **custom domain** `rubiconredsox.com` and publish the **MX** records Resend shows (apex must be `rubiconredsox.com`, not a typo label). Then [Webhooks](https://resend.com/webhooks) → URL `https://schedule.rubiconredsox.com/api/webhooks/resend` → event **`email.received`** → set env **`RESEND_WEBHOOK_SECRET`** to the webhook **signing secret** (required; without it the route returns 503). Production needs **`RESEND_API_KEY`** with **full API access** so the app can call **`GET /emails/receiving/:id`** (send-only keys only work for **`SMTP_PASS`** / sending). The forward email is sent with **`SMTP_PASS`** (or **`RESEND_API_KEY`** if no separate send key). Public contact uses `support@rubiconredsox.com` in `src/config/public-org-verification.ts`.
+
+### Persistent uploads (branding / PWA icons)
+
+Lightsail **container services cannot mount disks**; the container filesystem is ephemeral. To keep custom org icons across deploys, set:
+
+| Variable | Purpose |
+|----------|---------|
+| `BRANDING_S3_BUCKET` | S3 bucket name (e.g. `redsox-schedule-uploads`). When set, icons are stored under `branding/{organizationId}/`. |
+| `BRANDING_S3_PREFIX` | Optional key prefix (default `branding`). |
+| `AWS_REGION` | e.g. `us-east-2` (falls back to `AWS_REGION_SNS` if unset). |
+
+**Credentials:** The app uses `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` if set; otherwise it reuses `AWS_ACCESS_KEY_ID_SNS` + `AWS_SECRET_ACCESS_KEY_SNS`. Grant that IAM identity `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on `arn:aws:s3:::YOUR_BUCKET/branding/*`.
+
+Create the bucket in the same region as the service (`us-east-2`), keep it **private** (no public ACL); the app serves bytes via `/api/branding/icons/...`.
+
+**Local dev:** Leave `BRANDING_S3_BUCKET` unset to use `uploads/branding` on disk.
+
+Add the env vars to `lightsail-deploy.json` under `containers.scheduler.environment` when the bucket exists.
+
 ### Database migrations (production)
 
 Every production deploy **runs migrations automatically** before the app starts. The container `CMD` is:

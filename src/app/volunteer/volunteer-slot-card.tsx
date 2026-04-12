@@ -28,19 +28,19 @@ export function VolunteerSlotCard({ slot }: VolunteerSlotCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm">{slot.name}</span>
+            <span className="font-semibold text-base">{slot.name}</span>
             <Badge
               variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded-lg text-[11px]"
+              className="rounded-lg text-sm"
             >
-              <Users className="mr-1 h-3 w-3" />
+              <Users className="mr-1 h-4 w-4" />
               {spotsLeft > 0
                 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left`
                 : "Full"}
             </Badge>
           </div>
           {slot.description && (
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-sm text-muted-foreground">
               {slot.description}
             </p>
           )}

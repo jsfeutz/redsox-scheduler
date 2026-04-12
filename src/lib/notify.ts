@@ -5,11 +5,17 @@ import {
   sendJobCancellationNotification,
   sendAdminVolunteerCancellationAlert,
   sendAdminUnfilledJobsAlert,
+  sendEventAddedNotification,
+  sendEventCancelledNotification,
+  sendEventTimeChangedNotification,
+  sendVolunteerEventCancelledEmail,
+  sendVolunteerEventTimeChangedEmail,
 } from "@/lib/email";
 import { format, startOfWeek } from "date-fns";
 import {
   AdminNotifyChannel,
   AdminNotifyEvent,
+  NotifyTrigger,
 } from "@prisma/client";
 
 const APP_URL = process.env.APP_URL || "http://localhost:3003";
@@ -168,6 +174,262 @@ export async function notifyScheduleChange(opts: {
   }
 }
 
+export async function dispatchEventNotification(opts: {
+  eventId: string;
+  trigger: NotifyTrigger;
+  organizationId: string;
+  teamId?: string | null;
+  eventTitle: string;
+  eventDate: string;
+  oldTime?: string;
+  newTime?: string;
+  teamName?: string | null;
+  location?: string | null;
+  volunteers?: { jobName: string; name: string | null; email: string | null }[];
+}) {
+  try {
+    const { enqueue } = await import("@/lib/queue");
+    await enqueue("event-change-notification", {
+      eventId: opts.eventId,
+      trigger: opts.trigger,
+      organizationId: opts.organizationId,
+      teamId: opts.teamId ?? null,
+      eventTitle: opts.eventTitle,
+      eventDate: opts.eventDate,
+      oldTime: opts.oldTime,
+      newTime: opts.newTime,
+      teamName: opts.teamName ?? null,
+      location: opts.location ?? null,
+      volunteers: opts.volunteers ?? [],
+    });
+  } catch (err) {
+    console.error("[NOTIFY] Failed to enqueue event notification, falling back to direct dispatch:", err);
+    await dispatchEventNotificationDirect(opts);
+  }
+}
+
+async function dispatchEventNotificationDirect(opts: {
+  eventId: string;
+  trigger: NotifyTrigger;
+  organizationId: string;
+  teamId?: string | null;
+  eventTitle: string;
+  eventDate: string;
+  oldTime?: string;
+  newTime?: string;
+  teamName?: string | null;
+  location?: string | null;
+  volunteers?: { jobName: string; name: string | null; email: string | null }[];
+}) {
+  const allSubs = await prisma.notificationSubscription.findMany({
+    where: {
+      organizationId: opts.organizationId,
+      trigger: opts.trigger,
+      enabled: true,
+    },
+    include: {
+      user: { select: { id: true, email: true, phone: true, smsEnabled: true } },
+    },
+  });
+
+  const subs = await filterSubsByScope(allSubs, opts.teamId ?? null);
+
+  for (const sub of subs) {
+    const email = sub.recipientEmail || sub.user?.email;
+    const phone = sub.recipientPhone || (sub.user?.smsEnabled ? sub.user?.phone : null);
+
+    if (sub.channel === "EMAIL" && email) {
+      try {
+        switch (opts.trigger) {
+          case "EVENT_ADDED":
+            await sendEventAddedNotification({
+              to: email,
+              eventTitle: opts.eventTitle,
+              eventDate: opts.eventDate,
+              eventId: opts.eventId,
+              teamName: opts.teamName,
+              location: opts.location,
+            });
+            break;
+          case "EVENT_CANCELLED":
+            await sendEventCancelledNotification({
+              to: email,
+              eventTitle: opts.eventTitle,
+              eventDate: opts.eventDate,
+              eventId: opts.eventId,
+              teamName: opts.teamName,
+              location: opts.location,
+              volunteers: opts.volunteers,
+            });
+            break;
+          case "EVENT_TIME_CHANGED":
+            await sendEventTimeChangedNotification({
+              to: email,
+              eventTitle: opts.eventTitle,
+              oldTime: opts.oldTime || opts.eventDate,
+              newTime: opts.newTime || opts.eventDate,
+              eventId: opts.eventId,
+              teamName: opts.teamName,
+              location: opts.location,
+            });
+            break;
+        }
+      } catch (e) {
+        console.error(`[NOTIFY] Event ${opts.trigger} email to ${email} failed:`, e);
+      }
+    }
+
+    if (sub.channel === "SMS" && phone && (await isOrgSmsEnabled())) {
+      let msg: string;
+      switch (opts.trigger) {
+        case "EVENT_ADDED":
+          msg = `${ORG_NAME}: New event - ${opts.eventTitle} on ${opts.eventDate}.`;
+          break;
+        case "EVENT_CANCELLED":
+          msg = `${ORG_NAME}: ${opts.eventTitle} (${opts.eventDate}) has been cancelled.`;
+          break;
+        case "EVENT_TIME_CHANGED":
+          msg = `${ORG_NAME}: ${opts.eventTitle} moved from ${opts.oldTime || "original time"} to ${opts.newTime || "new time"}.`;
+          break;
+        default:
+          msg = `${ORG_NAME}: Schedule update for ${opts.eventTitle}.`;
+      }
+      msg += " Reply STOP to opt out.";
+      await sendSms(phone, msg.slice(0, 300), {
+        type: "SCHEDULE_CHANGE",
+        relatedEventId: opts.eventId,
+      });
+    }
+  }
+}
+
+async function filterSubsByScope<
+  T extends {
+    scope: string;
+    teamId: string | null;
+    userId: string | null;
+    user: { id: string } | null;
+  },
+>(subs: T[], eventTeamId: string | null): Promise<T[]> {
+  const myTeamsUserIds = subs
+    .filter((s) => s.scope === "MY_TEAMS" && s.userId)
+    .map((s) => s.userId!);
+
+  const userTeamMap = new Map<string, Set<string>>();
+  if (myTeamsUserIds.length > 0 && eventTeamId) {
+    const members = await prisma.teamMember.findMany({
+      where: { userId: { in: myTeamsUserIds }, teamId: eventTeamId },
+      select: { userId: true, teamId: true },
+    });
+    for (const m of members) {
+      const set = userTeamMap.get(m.userId) ?? new Set();
+      set.add(m.teamId);
+      userTeamMap.set(m.userId, set);
+    }
+  }
+
+  return subs.filter((sub) => {
+    switch (sub.scope) {
+      case "ALL_EVENTS":
+        return true;
+      case "SPECIFIC_TEAM":
+        return eventTeamId != null && sub.teamId === eventTeamId;
+      case "MY_TEAMS":
+      default:
+        if (!eventTeamId) return false;
+        if (!sub.userId) return true;
+        return userTeamMap.get(sub.userId)?.has(eventTeamId) ?? false;
+    }
+  });
+}
+
+export async function notifySignedUpVolunteers(opts: {
+  eventId: string;
+  changeType: "cancelled" | "time_changed";
+  eventTitle: string;
+  eventDate: string;
+  oldTime?: string;
+  newTime?: string;
+  location?: string | null;
+}) {
+  const assignments = await prisma.jobAssignment.findMany({
+    where: {
+      cancelledAt: null,
+      gameJob: { scheduleEventId: opts.eventId },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      user: { select: { phone: true, smsEnabled: true } },
+      playerVolunteer: { select: { phone: true } },
+      gameJob: {
+        select: { jobTemplate: { select: { name: true } } },
+      },
+    },
+  });
+
+  const smsOk = await isOrgSmsEnabled();
+
+  for (const a of assignments) {
+    const volunteerName = a.name || "Volunteer";
+    const jobName = a.gameJob.jobTemplate.name;
+    const phone = resolvePhone(a);
+
+    if (opts.changeType === "cancelled") {
+      if (a.email) {
+        try {
+          await sendVolunteerEventCancelledEmail({
+            to: a.email,
+            volunteerName,
+            jobName,
+            eventTitle: opts.eventTitle,
+            eventDate: opts.eventDate,
+            location: opts.location,
+            eventId: opts.eventId,
+          });
+        } catch (e) {
+          console.error(`[NOTIFY] Volunteer cancelled email to ${a.email} failed:`, e);
+        }
+      }
+      if (smsOk && phone) {
+        const msg = `${ORG_NAME}: ${opts.eventTitle} on ${opts.eventDate} has been cancelled. Your ${jobName} signup has been removed. Reply STOP to opt out.`;
+        await sendSms(phone, msg.slice(0, 300), {
+          type: "SCHEDULE_CHANGE",
+          relatedEventId: opts.eventId,
+          relatedAssignId: a.id,
+        });
+      }
+    } else {
+      if (a.email) {
+        try {
+          await sendVolunteerEventTimeChangedEmail({
+            to: a.email,
+            volunteerName,
+            jobName,
+            eventTitle: opts.eventTitle,
+            oldTime: opts.oldTime || opts.eventDate,
+            newTime: opts.newTime || opts.eventDate,
+            location: opts.location,
+            eventId: opts.eventId,
+          });
+        } catch (e) {
+          console.error(`[NOTIFY] Volunteer time-change email to ${a.email} failed:`, e);
+        }
+      }
+      if (smsOk && phone) {
+        const msg = `${ORG_NAME}: ${opts.eventTitle} has been rescheduled from ${opts.oldTime || "original time"} to ${opts.newTime || "new time"}. Your ${jobName} signup is still active. Reply STOP to opt out.`;
+        await sendSms(phone, msg.slice(0, 300), {
+          type: "SCHEDULE_CHANGE",
+          relatedEventId: opts.eventId,
+          relatedAssignId: a.id,
+        });
+      }
+    }
+  }
+}
+
 export async function notifyJobReminder(opts: {
   assignmentId: string;
   phone: string;
@@ -297,6 +559,7 @@ export async function processUnfilledJobs24hNotifications(): Promise<{
       disabled: false,
       scheduleEvent: {
         cancelledByBumpId: null,
+        cancelledAt: null,
         startTime: { gte: windowStart, lte: windowEnd },
       },
     },
@@ -349,11 +612,11 @@ export async function processUnfilledJobs24hNotifications(): Promise<{
     }
   }
 
-  const prefs = await prisma.adminNotificationPref.findMany({
+  const subs = await prisma.notificationSubscription.findMany({
     where: {
-      event: AdminNotifyEvent.UNFILLED_JOBS_24H,
+      organizationId: org.id,
+      trigger: "UNFILLED_JOBS_24H",
       enabled: true,
-      user: { organizationId: org.id, active: true },
     },
     include: {
       user: {
@@ -375,46 +638,35 @@ export async function processUnfilledJobs24hNotifications(): Promise<{
     const block = data.lines.join("; ");
     let anyRecipient = false;
 
-    for (const p of prefs) {
-      const u = p.user;
-      const reminderKey = `unfilled24h:${u.id}:${eventId}`;
-      const existing = await prisma.notificationLog.findFirst({
+    for (const sub of subs) {
+      const userId = sub.userId ?? sub.user?.id;
+      if (!userId) continue;
+      const u = sub.user;
+      const email = sub.recipientEmail || u?.email;
+      const phone = sub.recipientPhone || (u?.smsEnabled ? u?.phone : null);
+
+      const reminderKey = `unfilled24h:${userId}:${eventId}`;
+      const alreadySent = await prisma.notificationLog.findFirst({
         where: { reminderKey, status: "SENT" },
       });
-      if (existing) continue;
-
-      const sendEmail =
-        p.channel === AdminNotifyChannel.EMAIL ||
-        p.channel === AdminNotifyChannel.BOTH;
-      const sendSmsPref =
-        (p.channel === AdminNotifyChannel.SMS ||
-          p.channel === AdminNotifyChannel.BOTH) &&
-        u.smsEnabled !== false &&
-        u.phone;
+      if (alreadySent) continue;
 
       let delivered = false;
 
-      if (sendSmsPref && u.phone) {
+      if (sub.channel === "SMS" && phone) {
         const r = await sendSms(
-          u.phone,
-          `Redsox: Unfilled jobs in 24h — ${data.title} (${when}): ${block}`.slice(
-            0,
-            300
-          ),
-          {
-            type: "ADMIN_ALERT",
-            relatedEventId: eventId,
-            reminderKey,
-          }
+          phone,
+          `${ORG_NAME}: Unfilled jobs in 24h — ${data.title} (${when}): ${block}`.slice(0, 300),
+          { type: "ADMIN_ALERT", relatedEventId: eventId, reminderKey }
         );
         if (r.success) delivered = true;
       }
 
-      if (sendEmail) {
+      if (sub.channel === "EMAIL" && email) {
         try {
           await sendAdminUnfilledJobsAlert({
-            to: u.email,
-            recipientName: u.name,
+            to: email,
+            recipientName: u?.name ?? "Volunteer Coordinator",
             title: `Unfilled jobs in 24h: ${data.title}`,
             intro: `The following volunteer roles still need people for <strong>${data.title}</strong> (${when}).`,
             lines: data.lines,
@@ -427,22 +679,17 @@ export async function processUnfilledJobs24hNotifications(): Promise<{
 
       if (delivered) {
         anyRecipient = true;
-        const already = await prisma.notificationLog.findFirst({
-          where: { reminderKey, status: "SENT" },
+        await prisma.notificationLog.create({
+          data: {
+            type: "ADMIN_ALERT",
+            channel: sub.channel,
+            recipientEmail: email ?? null,
+            message: `Unfilled 24h: ${data.title}`,
+            status: "SENT",
+            relatedEventId: eventId,
+            reminderKey,
+          },
         });
-        if (!already) {
-          await prisma.notificationLog.create({
-            data: {
-              type: "ADMIN_ALERT",
-              channel: "EMAIL",
-              recipientEmail: u.email,
-              message: `Unfilled 24h: ${data.title}`,
-              status: "SENT",
-              relatedEventId: eventId,
-              reminderKey,
-            },
-          });
-        }
       }
     }
     if (anyRecipient) eventsNotified++;
@@ -473,6 +720,7 @@ export async function processUnfilledJobsWeeklyDigest(): Promise<{
       disabled: false,
       scheduleEvent: {
         cancelledByBumpId: null,
+        cancelledAt: null,
         startTime: { gte: now, lte: weekEnd },
       },
     },

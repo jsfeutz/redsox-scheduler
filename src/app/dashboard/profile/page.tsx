@@ -17,32 +17,72 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const ADMIN_NOTIFY_EVENTS = [
+type NotifScope = "ALL_EVENTS" | "MY_TEAMS" | "SPECIFIC_TEAM";
+type NotifChannel = "EMAIL" | "SMS" | "BOTH";
+
+interface NotifRow {
+  enabled: boolean;
+  channel: NotifChannel;
+  scope: NotifScope;
+  teamId: string | null;
+}
+
+interface OrgTeam {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+const NOTIFICATION_TRIGGERS = [
   {
-    event: "JOB_CANCELLATION",
-    label: "Job cancellations",
-    description:
-      "When a volunteer cancels a shift (e.g. via the link in their confirmation email).",
+    trigger: "EVENT_ADDED",
+    label: "Event added",
+    description: "When a new game, practice, or event is created.",
+    defaultEnabled: false,
   },
   {
-    event: "UNFILLED_JOBS_24H",
-    label: "Unfilled jobs (24 hours before)",
-    description:
-      "Alert when a public shift is still open about 24 hours before the event starts.",
+    trigger: "EVENT_CANCELLED",
+    label: "Event cancelled",
+    description: "When a scheduled event is removed from the calendar.",
+    defaultEnabled: false,
   },
   {
-    event: "UNFILLED_JOBS_WEEK",
-    label: "Unfilled jobs (weekly digest)",
-    description:
-      "Every Monday, a summary of open public shifts in the next 7 days (requires a scheduled cron).",
+    trigger: "EVENT_TIME_CHANGED",
+    label: "Event time changed",
+    description: "When the date or time of an event is updated.",
+    defaultEnabled: false,
+  },
+  {
+    trigger: "JOB_SIGNUP_CANCELLED",
+    label: "Job signup cancelled",
+    description: "When a volunteer cancels their signup for a job on one of your events.",
+    defaultEnabled: false,
+  },
+  {
+    trigger: "CLUB_EVENT_CHANGED",
+    label: "Club event changes",
+    description: "When club-level events (not tied to a specific team) are changed.",
+    defaultEnabled: false,
+  },
+  {
+    trigger: "SLOT_REQUEST",
+    label: "Time slot change requests",
+    description: "When someone requests to change a time slot on the schedule.",
+    defaultEnabled: true,
+  },
+  {
+    trigger: "UNFILLED_JOBS_24H",
+    label: "Unfilled jobs (24h before event)",
+    description: "Get notified when volunteer jobs are still open 24 hours before an event starts.",
+    defaultEnabled: false,
   },
 ] as const;
 
-type NotifyChannel = "EMAIL" | "SMS" | "BOTH";
-
-function canEditAdminNotifications(role: string | undefined) {
-  return role === "ADMIN" || role === "SCHEDULE_MANAGER";
-}
+const SCOPE_OPTIONS: { value: NotifScope; label: string }[] = [
+  { value: "ALL_EVENTS", label: "All events" },
+  { value: "MY_TEAMS", label: "My teams only" },
+  { value: "SPECIFIC_TEAM", label: "Specific team" },
+];
 
 export default function ProfilePage() {
   const { data: session, update: updateSession } = useSession();
@@ -56,9 +96,8 @@ export default function ProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [notifState, setNotifState] = useState<
-    Record<string, { enabled: boolean; channel: NotifyChannel }>
-  >({});
+  const [teams, setTeams] = useState<OrgTeam[]>([]);
+  const [notifState, setNotifState] = useState<Record<string, NotifRow>>({});
   const [savingNotif, setSavingNotif] = useState(false);
 
   useEffect(() => {
@@ -69,21 +108,47 @@ export default function ProfilePage() {
         if (data.email) setEmail(data.email);
         if (data.phone) setPhone(data.phone);
         if (data.smsEnabled !== undefined) setSmsEnabled(data.smsEnabled);
-        const next: Record<string, { enabled: boolean; channel: NotifyChannel }> = {};
-        for (const row of ADMIN_NOTIFY_EVENTS) {
-          const found = (data.adminNotificationPrefs as { event: string; channel: string; enabled: boolean }[] | undefined)?.find(
-            (p) => p.event === row.event
-          );
-          next[row.event] = {
-            enabled: found?.enabled ?? false,
-            channel: (found?.channel as NotifyChannel) || "EMAIL",
+        if (Array.isArray(data.teams)) setTeams(data.teams);
+
+        const next: Record<string, NotifRow> = {};
+        const subs = (data.notificationSubscriptions ?? []) as {
+          trigger: string;
+          channel: string;
+          enabled: boolean;
+          scope: string;
+          teamId: string | null;
+        }[];
+        for (const row of NOTIFICATION_TRIGGERS) {
+          const matches = subs.filter((s) => s.trigger === row.trigger);
+          const hasEmail = matches.some((s) => s.channel === "EMAIL" && s.enabled);
+          const hasSms = matches.some((s) => s.channel === "SMS" && s.enabled);
+          const anyEnabled = matches.some((s) => s.enabled);
+          const first = matches[0];
+          let channel: NotifChannel = "EMAIL";
+          if (hasEmail && hasSms) channel = "BOTH";
+          else if (hasSms) channel = "SMS";
+          else if (hasEmail) channel = "EMAIL";
+          else if (first?.channel === "SMS") channel = "SMS";
+          next[row.trigger] = {
+            enabled: anyEnabled || (matches.length === 0 && row.defaultEnabled),
+            channel,
+            scope: (first?.scope as NotifScope) ?? "MY_TEAMS",
+            teamId: first?.teamId ?? null,
           };
         }
         setNotifState(next);
+
         setLoaded(true);
       })
       .catch(() => toast.error("Failed to load profile"));
   }, []);
+
+  function updateNotif(trigger: string, patch: Partial<NotifRow>) {
+    setNotifState((s) => ({
+      ...s,
+      [trigger]: { ...s[trigger], ...patch },
+    }));
+  }
 
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
@@ -109,22 +174,26 @@ export default function ProfilePage() {
   }
 
   async function handleSaveNotifications() {
-    if (!canEditAdminNotifications(session?.user?.role)) return;
     setSavingNotif(true);
     try {
-      const notificationPrefs = ADMIN_NOTIFY_EVENTS.map((row) => ({
-        event: row.event,
-        enabled: notifState[row.event]?.enabled ?? false,
-        channel: notifState[row.event]?.channel ?? "EMAIL",
-      }));
+      const eventNotificationPrefs = NOTIFICATION_TRIGGERS.map((row) => {
+        const s = notifState[row.trigger];
+        return {
+          trigger: row.trigger,
+          enabled: s?.enabled ?? row.defaultEnabled,
+          channel: s?.channel ?? "EMAIL",
+          scope: s?.scope ?? "MY_TEAMS",
+          teamId: s?.scope === "SPECIFIC_TEAM" ? s?.teamId : null,
+        };
+      });
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notificationPrefs }),
+        body: JSON.stringify({ eventNotificationPrefs }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || "Failed to save notification preferences");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to save");
         return;
       }
       toast.success("Notification preferences saved");
@@ -297,23 +366,25 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {canEditAdminNotifications(session?.user?.role) && (
-        <Card className="rounded-2xl border-border/50">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
-                <Bell className="h-5 w-5 text-violet-500" />
-              </div>
-              <CardTitle className="text-base">Admin notifications</CardTitle>
+      <Card className="rounded-2xl border-border/50">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
+              <Bell className="h-5 w-5 text-emerald-500" />
             </div>
-            <p className="text-xs text-muted-foreground pl-[52px] -mt-2">
-              Choose how you want to be notified about volunteer staffing. SMS uses your phone number above and respects the SMS toggle.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {ADMIN_NOTIFY_EVENTS.map((row) => (
+            <CardTitle className="text-base">Notifications</CardTitle>
+          </div>
+          <p className="text-xs text-muted-foreground pl-[52px] -mt-2">
+            Get notified about schedule changes, cancellations, and volunteer activity.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {NOTIFICATION_TRIGGERS.map((row) => {
+            const s = notifState[row.trigger];
+            const enabled = s?.enabled ?? row.defaultEnabled;
+            return (
               <div
-                key={row.event}
+                key={row.trigger}
                 className="rounded-xl border border-border/50 p-3 space-y-2"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -324,60 +395,103 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <Switch
-                    checked={notifState[row.event]?.enabled ?? false}
+                    checked={enabled}
                     onCheckedChange={(checked) =>
-                      setNotifState((s) => ({
-                        ...s,
-                        [row.event]: {
-                          enabled: checked,
-                          channel: s[row.event]?.channel ?? "EMAIL",
-                        },
-                      }))
+                      updateNotif(row.trigger, { enabled: checked })
                     }
                   />
                 </div>
-                {(notifState[row.event]?.enabled ?? false) && (
-                  <div className="grid gap-1.5 pt-1">
-                    <Label className="text-xs">Delivery</Label>
-                    <Select
-                      value={notifState[row.event]?.channel ?? "EMAIL"}
-                      onValueChange={(v) =>
-                        setNotifState((s) => ({
-                          ...s,
-                          [row.event]: {
-                            enabled: s[row.event]?.enabled ?? true,
-                            channel: (v as NotifyChannel) || "EMAIL",
-                          },
-                        }))
-                      }
-                    >
-                      <SelectTrigger className="h-9 rounded-xl text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="EMAIL">Email only</SelectItem>
-                        <SelectItem value="SMS">Text only</SelectItem>
-                        <SelectItem value="BOTH">Email and text</SelectItem>
-                      </SelectContent>
-                    </Select>
+                {enabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">Delivery</Label>
+                      <Select
+                        value={s?.channel ?? "EMAIL"}
+                        onValueChange={(v) =>
+                          updateNotif(row.trigger, { channel: v as NotifChannel })
+                        }
+                      >
+                        <SelectTrigger className="h-9 rounded-xl text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="EMAIL">Email</SelectItem>
+                          <SelectItem value="SMS">SMS</SelectItem>
+                          <SelectItem value="BOTH">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">Scope</Label>
+                      <Select
+                        value={s?.scope ?? "MY_TEAMS"}
+                        onValueChange={(v) =>
+                          updateNotif(row.trigger, {
+                            scope: v as NotifScope,
+                            teamId: v === "SPECIFIC_TEAM" ? s?.teamId : null,
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-9 rounded-xl text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SCOPE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {s?.scope === "SPECIFIC_TEAM" && (
+                      <div className="grid gap-1.5 sm:col-span-2">
+                        <Label className="text-xs">Team</Label>
+                        <Select
+                          value={s.teamId ?? ""}
+                          onValueChange={(v) =>
+                            updateNotif(row.trigger, { teamId: v || null })
+                          }
+                        >
+                          <SelectTrigger className="h-9 rounded-xl text-sm">
+                            <SelectValue placeholder="Choose a team…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <span className="flex items-center gap-2">
+                                  {t.color && (
+                                    <span
+                                      className="inline-block h-3 w-3 rounded-full shrink-0"
+                                      style={{ backgroundColor: t.color }}
+                                    />
+                                  )}
+                                  {t.name}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            ))}
-            <Button
-              type="button"
-              onClick={handleSaveNotifications}
-              disabled={savingNotif}
-              className="rounded-xl"
-            >
-              {savingNotif && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Save notification preferences
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            );
+          })}
+          <Button
+            type="button"
+            onClick={handleSaveNotifications}
+            disabled={savingNotif}
+            className="rounded-xl"
+          >
+            {savingNotif && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Save notifications
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="rounded-2xl border-border/50">
         <CardHeader className="pb-4">

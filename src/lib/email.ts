@@ -4,14 +4,19 @@ const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "1025", 10);
 const SMTP_USER = process.env.SMTP_USER || undefined;
 const SMTP_PASS = process.env.SMTP_PASS || undefined;
-const SMTP_FROM = process.env.SMTP_FROM || "noreply@feutz.com";
+/** Default: display name + address (RFC 5322). Override via SMTP_FROM. */
+const SMTP_FROM =
+  process.env.SMTP_FROM ||
+  "Rubicon Redsox Notification <noreply@rubiconredsox.com>";
 
 function getTransport() {
   if (!SMTP_HOST) return null;
+  const useTlsStart = SMTP_PORT === 587 || SMTP_PORT === 2587;
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
+    secure: SMTP_PORT === 465 || SMTP_PORT === 2465,
+    ...(useTlsStart ? { requireTLS: true } : {}),
     ...(SMTP_USER && SMTP_PASS
       ? { auth: { user: SMTP_USER, pass: SMTP_PASS } }
       : {}),
@@ -21,7 +26,23 @@ function getTransport() {
 async function send(to: string, subject: string, html: string) {
   const transport = getTransport();
   if (transport) {
-    await transport.sendMail({ from: SMTP_FROM, to, subject, html });
+    try {
+      await transport.sendMail({ from: SMTP_FROM, to, subject, html });
+    } catch (err) {
+      const e = err as {
+        message?: string;
+        response?: string;
+        responseCode?: number;
+        code?: string;
+      };
+      console.error(
+        "[EMAIL] SMTP send failed:",
+        e.message || err,
+        e.responseCode != null ? `code=${e.responseCode}` : "",
+        e.response ? `response=${e.response.slice(0, 500)}` : ""
+      );
+      throw err;
+    }
   }
   console.log(`[EMAIL] To: ${to} | Subject: ${subject}`);
   if (!transport) {
@@ -440,4 +461,212 @@ export async function sendAdminUnfilledJobsAlert(opts: {
   `;
 
   await send(opts.to, opts.title, html);
+}
+
+export async function sendEventAddedNotification(opts: {
+  to: string;
+  eventTitle: string;
+  eventDate: string;
+  eventId?: string;
+  teamName?: string | null;
+  location?: string | null;
+}) {
+  const scheduleLink = opts.eventId
+    ? `${APP_URL}/dashboard/schedules?event=${opts.eventId}`
+    : `${APP_URL}/dashboard/schedules`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">New Event Added</h2>
+      <p style="color:#666;margin:0 0 16px">A new event has been added to the schedule.</p>
+      <div style="background:#f9f9f9;border-radius:8px;padding:16px;margin-bottom:20px">
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px"><strong>When:</strong> ${opts.eventDate}</p>
+        ${opts.teamName ? `<p style="margin:0 0 4px"><strong>Team:</strong> ${opts.teamName}</p>` : ""}
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      <a href="${scheduleLink}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        View Event
+      </a>
+    </div>
+  `;
+  await send(opts.to, `New event: ${opts.eventTitle}`, html);
+}
+
+export async function sendEventCancelledNotification(opts: {
+  to: string;
+  eventTitle: string;
+  eventDate: string;
+  eventId?: string;
+  teamName?: string | null;
+  location?: string | null;
+  volunteers?: { jobName: string; name: string | null; email: string | null }[];
+}) {
+  const volunteerRows = (opts.volunteers ?? [])
+    .map(
+      (v) =>
+        `<tr>
+          <td style="padding:4px 8px;border-bottom:1px solid #fecaca;font-size:13px">${v.jobName}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #fecaca;font-size:13px">${v.name || "—"}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #fecaca;font-size:13px">${v.email || "—"}</td>
+        </tr>`
+    )
+    .join("");
+
+  const volunteersSection =
+    volunteerRows
+      ? `<div style="margin-bottom:20px">
+          <p style="margin:0 0 8px;font-weight:600;font-size:14px;color:#333">Affected Volunteers</p>
+          <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;border:1px solid #fecaca">
+            <thead>
+              <tr style="background:#fef2f2">
+                <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;font-weight:600">Job</th>
+                <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;font-weight:600">Name</th>
+                <th style="padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#666;font-weight:600">Email</th>
+              </tr>
+            </thead>
+            <tbody>${volunteerRows}</tbody>
+          </table>
+        </div>`
+      : "";
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px;color:#dc2626">Event Cancelled</h2>
+      <p style="color:#666;margin:0 0 16px">The following event has been removed from the schedule.</p>
+      <div style="background:#fef2f2;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #fecaca">
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px"><strong>Was scheduled:</strong> ${opts.eventDate}</p>
+        ${opts.teamName ? `<p style="margin:0 0 4px"><strong>Team:</strong> ${opts.teamName}</p>` : ""}
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      ${volunteersSection}
+      <div style="display:flex;gap:8px">
+        <a href="${APP_URL}/dashboard/reports?tab=cancelled${opts.eventId ? `&event=${opts.eventId}` : ""}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+          View Cancelled Event
+        </a>
+        <a href="${APP_URL}/dashboard/schedules" style="display:inline-block;background:#f3f4f6;color:#374151;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+          View Schedule
+        </a>
+      </div>
+    </div>
+  `;
+  await send(opts.to, `Event cancelled: ${opts.eventTitle}`, html);
+}
+
+export async function sendEventTimeChangedNotification(opts: {
+  to: string;
+  eventTitle: string;
+  oldTime: string;
+  newTime: string;
+  eventId?: string;
+  teamName?: string | null;
+  location?: string | null;
+}) {
+  const scheduleLink = opts.eventId
+    ? `${APP_URL}/dashboard/schedules?event=${opts.eventId}`
+    : `${APP_URL}/dashboard/schedules`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">Schedule Change</h2>
+      <p style="color:#666;margin:0 0 16px">The date or time for an event has been updated.</p>
+      <div style="background:#fffbeb;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #fde68a">
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px;color:#dc2626;text-decoration:line-through"><strong>Was:</strong> ${opts.oldTime}</p>
+        <p style="margin:0 0 4px;color:#16a34a"><strong>Now:</strong> ${opts.newTime}</p>
+        ${opts.teamName ? `<p style="margin:0 0 4px"><strong>Team:</strong> ${opts.teamName}</p>` : ""}
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      <a href="${scheduleLink}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        View Event
+      </a>
+    </div>
+  `;
+  await send(opts.to, `Schedule change: ${opts.eventTitle}`, html);
+}
+
+export async function sendVolunteerEventCancelledEmail(opts: {
+  to: string;
+  volunteerName: string;
+  jobName: string;
+  eventTitle: string;
+  eventDate: string;
+  location?: string | null;
+  eventId?: string;
+}) {
+  const cancelledUrl = opts.eventId
+    ? `${APP_URL}/dashboard/reports?tab=cancelled&event=${opts.eventId}`
+    : `${APP_URL}/help-wanted`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px;color:#dc2626">Event Cancelled</h2>
+      <p style="color:#666;margin:0 0 16px">
+        Hi ${opts.volunteerName}, the event you signed up for has been cancelled.
+      </p>
+      <div style="background:#fef2f2;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #fecaca">
+        <p style="margin:0 0 4px"><strong>Your job:</strong> ${opts.jobName}</p>
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px"><strong>Was scheduled:</strong> ${opts.eventDate}</p>
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      <p style="color:#666;margin:0 0 20px">
+        Your signup has been automatically removed. If you'd like to volunteer for other events, check the Help Wanted board.
+      </p>
+      <a href="${APP_URL}/help-wanted" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        View Help Wanted
+      </a>
+    </div>
+  `;
+  await send(opts.to, `Event cancelled: ${opts.jobName} — ${opts.eventTitle}`, html);
+}
+
+export async function sendVolunteerEventTimeChangedEmail(opts: {
+  to: string;
+  volunteerName: string;
+  jobName: string;
+  eventTitle: string;
+  oldTime: string;
+  newTime: string;
+  location?: string | null;
+  eventId?: string;
+}) {
+  const scheduleLink = opts.eventId
+    ? `${APP_URL}/dashboard/schedules?event=${opts.eventId}`
+    : `${APP_URL}/schedule`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">Event Time Changed</h2>
+      <p style="color:#666;margin:0 0 16px">
+        Hi ${opts.volunteerName}, the event you signed up for has been rescheduled.
+      </p>
+      <div style="background:#fffbeb;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #fde68a">
+        <p style="margin:0 0 4px"><strong>Your job:</strong> ${opts.jobName}</p>
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px;color:#dc2626;text-decoration:line-through"><strong>Was:</strong> ${opts.oldTime}</p>
+        <p style="margin:0 0 4px;color:#16a34a"><strong>Now:</strong> ${opts.newTime}</p>
+        ${opts.location ? `<p style="margin:0"><strong>Location:</strong> ${opts.location}</p>` : ""}
+      </div>
+      <p style="color:#666;margin:0 0 20px">
+        Your signup is still active for the new time. If you can no longer make it, please cancel your signup.
+      </p>
+      <a href="${scheduleLink}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+        View Event
+      </a>
+    </div>
+  `;
+  await send(opts.to, `Time changed: ${opts.jobName} — ${opts.eventTitle}`, html);
 }

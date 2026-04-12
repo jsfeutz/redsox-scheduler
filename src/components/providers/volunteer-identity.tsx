@@ -4,7 +4,6 @@ import {
   createContext,
   useContext,
   useState,
-  useEffect,
   useCallback,
   type ReactNode,
 } from "react";
@@ -34,19 +33,18 @@ export function useVolunteerIdentity() {
 }
 
 export function VolunteerIdentityProvider({ children }: { children: ReactNode }) {
-  const [identity, setIdentityState] = useState<VolunteerIdentity | null>(null);
-
-  useEffect(() => {
+  const [identity, setIdentityState] = useState<VolunteerIdentity | null>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as VolunteerIdentity;
-        if (parsed.email && parsed.token) {
-          setIdentityState(parsed);
-        }
-      }
-    } catch {}
-  }, []);
+      if (typeof window === "undefined") return null;
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored) as VolunteerIdentity;
+      if (parsed.email && parsed.token) return parsed;
+      return null;
+    } catch {
+      return null;
+    }
+  });
 
   const setIdentity = useCallback((id: VolunteerIdentity) => {
     setIdentityState(id);

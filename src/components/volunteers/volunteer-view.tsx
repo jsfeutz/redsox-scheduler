@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
-  Calendar,
   Clock,
   MapPin,
   Search,
@@ -23,6 +22,10 @@ import {
 import { cn } from "@/lib/utils";
 import { JobSlotRow } from "@/components/jobs/job-slot-row";
 import type { JobVolunteer } from "@/components/jobs/job-slot-row";
+import { AddJobDialog } from "@/components/jobs/add-job-dialog";
+import type { AddJobEventOption, AddJobPlayerOption, AddJobTeamOption } from "@/components/jobs/add-job-dialog";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 interface Signup {
   name: string;
@@ -37,6 +40,7 @@ interface UnfilledJob {
   slotsFilled: number;
   isPublic: boolean;
   disabled: boolean;
+  isOrgJob?: boolean;
   volunteers: JobVolunteer[];
   signups: Signup[];
   event: {
@@ -49,71 +53,52 @@ interface UnfilledJob {
     teamName: string;
     teamColor: string;
     coachName: string | null;
+    /** Additional teams linked to the event (filter / search). */
+    taggedTeamNames?: string[];
     facility: string | null;
   };
 }
 
-interface TeamSummary {
-  teamId: string | null;
-  teamName: string;
-  teamColor: string;
-  coachName: string | null;
-  openSlots: number;
-  totalJobs: number;
-  nextEvent: string;
-  nextEventTitle: string;
-}
-
 interface Props {
   jobs: UnfilledJob[];
+  teams?: AddJobTeamOption[];
+  events?: AddJobEventOption[];
+  players?: AddJobPlayerOption[];
   canManage?: boolean;
   isAdmin?: boolean;
   userTeamIds?: string[];
 }
 
-export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTeamIds = [] }: Props) {
+export function VolunteerView({
+  jobs,
+  teams = [],
+  events = [],
+  players = [],
+  canManage = false,
+  isAdmin = false,
+  userTeamIds = [],
+}: Props) {
   const [filter, setFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("ALL");
-  const [activeTab, setActiveTab] = useState("teams");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const teamSummaries = useMemo(() => {
-    const map = new Map<string, TeamSummary>();
-    for (const j of jobs) {
-      const key = j.event.teamId ?? "__club__";
-      const existing = map.get(key);
-      if (existing) {
-        existing.openSlots += j.slotsNeeded - j.slotsFilled;
-        existing.totalJobs += 1;
-        if (j.event.startTime < existing.nextEvent) {
-          existing.nextEvent = j.event.startTime;
-          existing.nextEventTitle = j.event.title;
-        }
-      } else {
-        map.set(key, {
-          teamId: j.event.teamId,
-          teamName: j.event.teamName,
-          teamColor: j.event.teamColor,
-          coachName: j.event.coachName,
-          openSlots: j.slotsNeeded - j.slotsFilled,
-          totalJobs: 1,
-          nextEvent: j.event.startTime,
-          nextEventTitle: j.event.title,
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => b.openSlots - a.openSlots);
-  }, [jobs]);
-
   const teamNames = useMemo(() => {
-    const set = new Set(jobs.map((j) => j.event.teamName));
+    const set = new Set<string>();
+    for (const j of jobs) {
+      set.add(j.event.teamName);
+      for (const n of j.event.taggedTeamNames ?? []) set.add(n);
+    }
     return Array.from(set).sort();
   }, [jobs]);
 
   const filtered = useMemo(() => {
     let result = jobs;
     if (teamFilter !== "ALL") {
-      result = result.filter((j) => j.event.teamName === teamFilter);
+      result = result.filter(
+        (j) =>
+          j.event.teamName === teamFilter ||
+          (j.event.taggedTeamNames?.includes(teamFilter) ?? false)
+      );
     }
     if (filter) {
       const q = filter.toLowerCase();
@@ -122,6 +107,8 @@ export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTe
           j.jobName.toLowerCase().includes(q) ||
           j.event.title.toLowerCase().includes(q) ||
           j.event.teamName.toLowerCase().includes(q) ||
+          (j.event.taggedTeamNames?.some((n) => n.toLowerCase().includes(q)) ??
+            false) ||
           (j.event.coachName && j.event.coachName.toLowerCase().includes(q))
       );
     }
@@ -130,40 +117,17 @@ export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTe
 
   const totalOpenSlots = filtered.reduce((s, j) => s + (j.slotsNeeded - j.slotsFilled), 0);
 
+  const uniqueTeamCount = useMemo(() => {
+    const set = new Set(filtered.map((j) => j.event.teamId ?? "__club__"));
+    return set.size;
+  }, [filtered]);
+
   function canManageJob(j: UnfilledJob): boolean {
     if (!canManage) return false;
     if (isAdmin) return true;
     if (!j.event.teamId) return false;
     return userTeamIds.includes(j.event.teamId);
   }
-
-  const filteredTeamSummaries = useMemo(() => {
-    const map = new Map<string, TeamSummary>();
-    for (const j of filtered) {
-      const key = j.event.teamId ?? "__club__";
-      const existing = map.get(key);
-      if (existing) {
-        existing.openSlots += j.slotsNeeded - j.slotsFilled;
-        existing.totalJobs += 1;
-        if (j.event.startTime < existing.nextEvent) {
-          existing.nextEvent = j.event.startTime;
-          existing.nextEventTitle = j.event.title;
-        }
-      } else {
-        map.set(key, {
-          teamId: j.event.teamId,
-          teamName: j.event.teamName,
-          teamColor: j.event.teamColor,
-          coachName: j.event.coachName,
-          openSlots: j.slotsNeeded - j.slotsFilled,
-          totalJobs: 1,
-          nextEvent: j.event.startTime,
-          nextEventTitle: j.event.title,
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => b.openSlots - a.openSlots);
-  }, [filtered]);
 
   if (jobs.length === 0) {
     return (
@@ -179,11 +143,21 @@ export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTe
 
   return (
     <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-4">
-      {/* Summary stats - compact on mobile */}
+      {canManage && (
+        <div className="flex items-center justify-end shrink-0">
+          <AddJobDialog teams={teams} events={events} players={players}>
+            <Button className="rounded-xl" size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Job
+            </Button>
+          </AddJobDialog>
+        </div>
+      )}
+      {/* Summary stats */}
       <div className="grid grid-cols-3 gap-2 md:gap-3 shrink-0 py-2 md:py-0">
         <Card className="rounded-xl">
           <CardContent className="p-3 md:pt-4 md:pb-3 md:px-4">
-            <p className="text-xl md:text-2xl font-bold">{filteredTeamSummaries.length}</p>
+            <p className="text-xl md:text-2xl font-bold">{uniqueTeamCount}</p>
             <p className="text-[10px] md:text-xs text-muted-foreground">Teams</p>
           </CardContent>
         </Card>
@@ -225,167 +199,94 @@ export function VolunteerView({ jobs, canManage = false, isAdmin = false, userTe
         </Select>
       </div>
 
-      {/* Tab bar */}
-      <div className="grid grid-cols-2 h-9 md:h-10 shrink-0 rounded-xl bg-muted p-[3px] gap-0.5">
-        <button
-          className={cn(
-            "flex items-center justify-center gap-1.5 rounded-lg text-xs md:text-sm font-medium transition-all",
-            activeTab === "teams"
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-          onClick={() => { setActiveTab("teams"); setTeamFilter("ALL"); setFilter(""); }}
-        >
-          <Users className="h-3.5 w-3.5" />
-          Teams Need Help
-        </button>
-        <button
-          className={cn(
-            "flex items-center justify-center gap-1.5 rounded-lg text-xs md:text-sm font-medium transition-all",
-            activeTab === "jobs"
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-          onClick={() => setActiveTab("jobs")}
-        >
-          <AlertCircle className="h-3.5 w-3.5" />
-          Unfilled Jobs
-        </button>
-      </div>
-
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto min-h-0 mt-2 md:mt-4">
-        {/* Teams Need Help */}
-        {activeTab === "teams" && (
-          <div className="space-y-2 md:space-y-3">
-            {filteredTeamSummaries.map((team) => (
-              <Card
-                key={team.teamId ?? "__club__"}
-                className="rounded-xl overflow-hidden cursor-pointer active:bg-accent/30 md:hover:bg-accent/30 transition-colors"
-                onClick={() => { setTeamFilter(team.teamName); setActiveTab("jobs"); setFilter(""); }}
+      {/* All Jobs */}
+      <div className="flex-1 overflow-y-auto min-h-0 mt-2 md:mt-4 space-y-2">
+        {filtered.map((j) => {
+          const isExpanded = expandedId === j.id;
+          const openCount = j.slotsNeeded - j.slotsFilled;
+          const isOrg = !!j.isOrgJob;
+          return (
+            <Card key={j.id} className="rounded-xl overflow-hidden">
+              <button
+                type="button"
+                className="w-full text-left p-3 md:p-4 active:bg-accent/30 md:hover:bg-accent/30 transition-colors"
+                onClick={() => setExpandedId(isExpanded ? null : j.id)}
               >
-                <div className="h-1" style={{ backgroundColor: team.teamColor }} />
-                <CardContent className="p-3 md:p-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0"
-                      style={{ backgroundColor: team.teamColor }}
-                    >
-                      {team.teamName.split(/\s|-/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0 mt-1.5"
+                    style={{ backgroundColor: isOrg ? "#94a3b8" : j.event.teamColor }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-semibold truncate">{j.jobName}</span>
+                      {isOrg && (
+                        <span className="text-[10px] rounded-full px-2 py-0.5 bg-muted text-muted-foreground shrink-0">
+                          Organization
+                        </span>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold truncate">{team.teamName}</h3>
-                        {team.coachName && (
-                          <span className="text-xs text-muted-foreground truncate hidden sm:inline">
-                            {team.coachName}
+                    <p className="text-xs text-muted-foreground truncate">
+                      {isOrg
+                        ? "Standalone job (not tied to an event)"
+                        : `${j.event.title} · ${j.event.teamName}`}
+                    </p>
+                    {!isOrg && (
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {format(new Date(j.event.startTime), "MMM d, h:mm a")}
+                        </span>
+                        {j.event.facility && (
+                          <span className="flex items-center gap-1 truncate hidden sm:flex">
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            {j.event.facility}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5 text-[11px] md:text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Next: {format(new Date(team.nextEvent), "MMM d")}
-                        </span>
-                        <span>{team.totalJobs} unfilled job{team.totalJobs !== 1 ? "s" : ""}</span>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-lg md:text-xl font-bold text-orange-600">{team.openSlots}</p>
-                      <p className="text-[10px] text-muted-foreground">open</p>
-                    </div>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* Unfilled Jobs */}
-        {activeTab === "jobs" && (
-          <div className="space-y-2">
-            {filtered.map((j) => {
-              const isExpanded = expandedId === j.id;
-              const openCount = j.slotsNeeded - j.slotsFilled;
-              return (
-                <Card key={j.id} className="rounded-xl overflow-hidden">
-                  <button
-                    type="button"
-                    className="w-full text-left p-3 md:p-4 active:bg-accent/30 md:hover:bg-accent/30 transition-colors"
-                    onClick={() => setExpandedId(isExpanded ? null : j.id)}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0 mt-1.5"
-                        style={{ backgroundColor: j.event.teamColor }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-semibold truncate">{j.jobName}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {j.event.title} · {j.event.teamName}
-                        </p>
-                        <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {format(new Date(j.event.startTime), "MMM d, h:mm a")}
-                          </span>
-                          {j.event.facility && (
-                            <span className="flex items-center gap-1 truncate hidden sm:flex">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              {j.event.facility}
-                            </span>
-                          )}
-                        </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <div className="flex items-center gap-1">
+                        <AlertCircle className={cn("h-3.5 w-3.5", j.slotsFilled === 0 ? "text-red-500" : "text-orange-500")} />
+                        <span className="text-sm font-bold">{j.slotsFilled}/{j.slotsNeeded}</span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
-                          <div className="flex items-center gap-1">
-                            {j.slotsFilled === 0 ? (
-                              <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-                            ) : (
-                              <AlertCircle className="h-3.5 w-3.5 text-orange-500" />
-                            )}
-                            <span className="text-sm font-bold">{j.slotsFilled}/{j.slotsNeeded}</span>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">{openCount} open</p>
-                        </div>
-                        <ChevronDown className={cn(
-                          "h-4 w-4 text-muted-foreground transition-transform",
-                          isExpanded && "rotate-180"
-                        )} />
-                      </div>
+                      <p className="text-[10px] text-muted-foreground">{openCount} open</p>
                     </div>
-                  </button>
+                    <ChevronDown className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform",
+                      isExpanded && "rotate-180"
+                    )} />
+                  </div>
+                </div>
+              </button>
 
-                  {isExpanded && (
-                    <div className="border-t bg-muted/20 px-3 md:px-4 py-2.5">
-                      <JobSlotRow
-                        job={{
-                          id: j.id,
-                          name: j.jobName,
-                          slotsNeeded: j.slotsNeeded,
-                          filled: j.slotsFilled,
-                          isPublic: j.isPublic,
-                          disabled: j.disabled,
-                          scope: j.jobScope,
-                          volunteers: j.volunteers,
-                        }}
-                        canManage={canManageJob(j)}
-                      />
-                    </div>
-                  )}
-                </Card>
-              );
-            })}
+              {isExpanded && (
+                <div className="border-t bg-muted/20 px-3 md:px-4 py-2.5">
+                  <JobSlotRow
+                    job={{
+                      id: j.id,
+                      name: j.jobName,
+                      slotsNeeded: j.slotsNeeded,
+                      filled: j.slotsFilled,
+                      isPublic: j.isPublic,
+                      disabled: j.disabled,
+                      scope: j.jobScope,
+                      volunteers: j.volunteers,
+                    }}
+                    canManage={canManageJob(j)}
+                  />
+                </div>
+              )}
+            </Card>
+          );
+        })}
 
-            {filtered.length === 0 && (filter || teamFilter !== "ALL") && (
-              <p className="text-center text-sm text-muted-foreground py-8">
-                No unfilled jobs match your filters.
-              </p>
-            )}
-          </div>
+        {filtered.length === 0 && (filter || teamFilter !== "ALL") && (
+          <p className="text-center text-sm text-muted-foreground py-8">
+            No jobs match your filters.
+          </p>
         )}
       </div>
     </div>

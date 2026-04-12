@@ -1,7 +1,16 @@
 import Link from "next/link";
 import { PublicFooter } from "@/components/public-footer";
+import { BrandingMark } from "@/components/branding/branding-mark";
+import { prisma } from "@/lib/prisma";
 
-export default function HomePage() {
+export default async function HomePage() {
+  let orgName = "Rubicon Redsox";
+  try {
+    const org = await prisma.organization.findFirst({ select: { name: true } });
+    if (org?.name) orgName = org.name;
+  } catch {
+    /* use default */
+  }
   return (
     <div className="min-h-dvh bg-background flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-4 relative overflow-hidden">
@@ -9,16 +18,17 @@ export default function HomePage() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/5 rounded-full blur-3xl" />
 
         <div className="relative z-10 max-w-lg text-center space-y-8">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white text-2xl font-black shadow-lg shadow-primary/30">
-            RR
+          <div className="mx-auto">
+            <BrandingMark variant="hero" />
           </div>
 
           <div className="space-y-3">
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
-              Rubicon Redsox
+              {orgName}
             </h1>
             <p className="text-lg text-muted-foreground max-w-md mx-auto">
-              Baseball scheduling &amp; volunteer management for the Rubicon Redsox Baseball Club
+              Baseball scheduling &amp; volunteer management for the{" "}
+              {orgName} Baseball Club
             </p>
           </div>
 
@@ -43,7 +53,7 @@ export default function HomePage() {
               </div>
               <div>
                 <p className="font-medium">Contact</p>
-                <p className="text-muted-foreground">noreply@feutz.com</p>
+                <p className="text-muted-foreground">noreply@rubiconredsox.com</p>
               </div>
             </div>
           </div>
@@ -64,7 +74,7 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
-            <Link href="/schedule" className="hover:text-primary transition-colors">Public Schedule</Link>
+            <Link href="/schedule" className="hover:text-primary transition-colors">Facility schedule</Link>
             <span className="text-border">·</span>
             <Link href="/help-wanted" className="hover:text-primary transition-colors">Help Wanted</Link>
             <span className="text-border">·</span>
@@ -73,6 +83,8 @@ export default function HomePage() {
             <Link href="/privacy" className="hover:text-primary transition-colors">Privacy</Link>
             <span className="text-border">·</span>
             <Link href="/sms-consent" className="hover:text-primary transition-colors">SMS Consent</Link>
+            <span className="text-border">·</span>
+            <Link href="/business-verification" className="hover:text-primary transition-colors">Business verification</Link>
           </div>
         </div>
       </div>

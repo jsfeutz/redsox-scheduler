@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canManageSchedule } from "@/lib/auth-helpers";
+import { dispatchEventNotification, formatEventDate, notifySignedUpVolunteers } from "@/lib/notify";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 type RouteContext = { params: Promise<{ groupId: string }> };
 
@@ -61,7 +63,55 @@ export async function DELETE(req: Request, { params }: RouteContext) {
     where.startTime = { gte: new Date() };
   }
 
-  const result = await prisma.scheduleEvent.deleteMany({ where });
+  const eventsToDelete = await prisma.scheduleEvent.findMany({
+    where,
+    select: { id: true, title: true, startTime: true, teamId: true },
+  });
+
+  if (eventsToDelete.length > 0) {
+    await logScheduleEventAudit(prisma, {
+      organizationId: user.organizationId,
+      recurrenceGroupId: groupId,
+      action: "SERIES_CANCEL",
+      actorUserId: user.id,
+      actorLabel: user.name || user.email,
+      summary: `Cancelled ${eventsToDelete.length} event(s) in recurring series`,
+      meta: {
+        futureOnly,
+        affected: eventsToDelete.map((e) => ({
+          id: e.id,
+          title: e.title,
+          startTime: e.startTime.toISOString(),
+        })),
+      },
+    });
+  }
+
+  for (const evt of eventsToDelete) {
+    dispatchEventNotification({
+      eventId: evt.id,
+      trigger: "EVENT_CANCELLED",
+      organizationId: user.organizationId,
+      teamId: evt.teamId,
+      eventTitle: evt.title,
+      eventDate: formatEventDate(evt.startTime),
+    }).catch(() => {});
+
+    notifySignedUpVolunteers({
+      eventId: evt.id,
+      changeType: "cancelled",
+      eventTitle: evt.title,
+      eventDate: formatEventDate(evt.startTime),
+    }).catch(() => {});
+  }
+
+  const result = await prisma.scheduleEvent.updateMany({
+    where,
+    data: {
+      cancelledAt: new Date(),
+      cancelledBy: user.name || user.email,
+    },
+  });
 
   return NextResponse.json({ deleted: result.count });
 }

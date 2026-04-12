@@ -62,7 +62,7 @@ export default async function OrgVolunteerPage({ params }: PageProps) {
           Volunteer Sign-Up
         </h1>
         <p className="mt-1 text-lg font-medium text-primary">{org.name}</p>
-        <p className="mt-2 text-muted-foreground">
+        <p className="mt-2 text-base text-muted-foreground">
           Help make our games great! Browse upcoming events and sign up for
           volunteer shifts below.
         </p>
@@ -75,7 +75,7 @@ export default async function OrgVolunteerPage({ params }: PageProps) {
             <p className="mt-4 text-lg font-medium">
               No open volunteer slots right now
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-base text-muted-foreground">
               Check back later for upcoming opportunities!
             </p>
           </CardContent>
@@ -103,14 +103,14 @@ export default async function OrgVolunteerPage({ params }: PageProps) {
                               {event.team?.name ?? "Club Event"}
                             </Badge>
                           </div>
-                          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-base text-muted-foreground">
                             <span className="flex items-center gap-1">
-                              <Clock className="h-3.5 w-3.5" />
+                              <Clock className="h-4 w-4" />
                               {format(new Date(event.startTime), "h:mm a")} –{" "}
                               {format(new Date(event.endTime), "h:mm a")}
                             </span>
                             <span className="flex items-center gap-1">
-                              <MapPin className="h-3.5 w-3.5" />
+                              <MapPin className="h-4 w-4" />
                               {event.subFacility ? `${event.subFacility.facility.name} – ${event.subFacility.name}` : "TBD"}
                             </span>
                           </div>

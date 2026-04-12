@@ -51,7 +51,7 @@ export async function PUT(
   }
 
   const body = await req.json();
-  const { name, address, googleMapsUrl, notes } = body;
+  const { name, address, googleMapsUrl, notes, color } = body;
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json(
@@ -64,6 +64,7 @@ export async function PUT(
     where: { id },
     data: {
       name: name.trim(),
+      ...(typeof color === "string" && color.trim() ? { color: color.trim() } : {}),
       address: address?.trim() || null,
       googleMapsUrl: googleMapsUrl?.trim() || null,
       notes: notes?.trim() || null,

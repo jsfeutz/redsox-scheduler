@@ -20,7 +20,10 @@ export default async function HelpWantedPage() {
   const where: Prisma.GameJobWhereInput = {
     isPublic: true,
     disabled: false,
-    scheduleEvent: { startTime: { gte: new Date() } },
+    OR: [
+      { scheduleEvent: { startTime: { gte: new Date() } } },
+      { scheduleEventId: null },
+    ],
   };
 
   if (org && !org.teamJobsPublicSignup) {
@@ -31,6 +34,7 @@ export default async function HelpWantedPage() {
     where,
     include: {
       jobTemplate: true,
+      season: { select: { id: true, name: true } },
       scheduleEvent: {
         include: {
           team: {
@@ -43,6 +47,18 @@ export default async function HelpWantedPage() {
           },
           subFacility: {
             include: { facility: { select: { id: true, name: true } } },
+          },
+          taggedTeams: {
+            include: {
+              team: {
+                select: {
+                  id: true,
+                  name: true,
+                  color: true,
+                  headCoach: { select: { name: true } },
+                },
+              },
+            },
           },
         },
       },
@@ -57,41 +73,53 @@ export default async function HelpWantedPage() {
   const teamsMap = new Map<string, FilterOption>();
   const facilitiesMap = new Map<string, FilterOption>();
 
-  const jobData: JobData[] = jobs
-    .filter((j) => j.scheduleEvent)
-    .map((job) => {
-      const evt = job.scheduleEvent!;
+  const jobData: JobData[] = jobs.map((job) => {
+      const evt = job.scheduleEvent;
 
-      if (evt.team && !teamsMap.has(evt.team.id)) {
-        teamsMap.set(evt.team.id, {
-          id: evt.team.id,
-          name: evt.team.name,
-          color: evt.team.color,
-          coachName: evt.team.headCoach?.name ?? undefined,
-        });
-      }
-      if (evt.subFacility && !facilitiesMap.has(evt.subFacility.facility.id)) {
-        facilitiesMap.set(evt.subFacility.facility.id, {
-          id: evt.subFacility.facility.id,
-          name: evt.subFacility.facility.name,
-        });
-      }
+      if (evt?.team && !teamsMap.has(evt.team.id)) {
+          teamsMap.set(evt.team.id, {
+            id: evt.team.id,
+            name: evt.team.name,
+            color: evt.team.color,
+            coachName: evt.team.headCoach?.name ?? undefined,
+          });
+        }
+        for (const link of evt?.taggedTeams ?? []) {
+          const t = link.team;
+          if (!teamsMap.has(t.id)) {
+            teamsMap.set(t.id, {
+              id: t.id,
+              name: t.name,
+              color: t.color,
+              coachName: t.headCoach?.name ?? undefined,
+            });
+          }
+        }
+        if (evt?.subFacility && !facilitiesMap.has(evt.subFacility.facility.id)) {
+          facilitiesMap.set(evt.subFacility.facility.id, {
+            id: evt.subFacility.facility.id,
+            name: evt.subFacility.facility.name,
+          });
+        }
 
       return {
         id: job.id,
         templateName: job.overrideName || job.jobTemplate.name,
         templateDescription: job.overrideDescription || job.jobTemplate.description,
-        eventId: evt.id,
-        eventTitle: evt.title,
-        eventType: evt.type,
-        startTime: evt.startTime.toISOString(),
-        endTime: evt.endTime.toISOString(),
-        teamId: evt.team?.id ?? "",
-        teamName: evt.team?.name ?? "Club Event",
-        teamColor: evt.team?.color ?? "#6b7280",
-        facilityId: evt.subFacility?.facility.id ?? "",
-        facilityName: evt.subFacility?.facility.name ?? "",
-        subFacilityName: evt.subFacility?.name ?? "",
+        isOrgJob: !evt,
+        orgLabel: job.season?.name ? `Season: ${job.season.name}` : "Ongoing",
+        eventId: evt?.id ?? "__org__",
+        eventTitle: evt?.title ?? "Organization Job",
+        eventType: evt?.type ?? "ORG",
+        startTime: (evt?.startTime ?? job.createdAt).toISOString(),
+        endTime: (evt?.endTime ?? job.createdAt).toISOString(),
+        teamId: evt?.team?.id ?? "",
+        taggedTeamIds: evt?.taggedTeams?.map((l) => l.team.id) ?? [],
+        teamName: evt?.team?.name ?? "Organization",
+        teamColor: evt?.team?.color ?? "#6b7280",
+        facilityId: evt?.subFacility?.facility.id ?? "",
+        facilityName: evt?.subFacility?.facility.name ?? "",
+        subFacilityName: evt?.subFacility?.name ?? "",
         slotsNeeded: job.slotsNeeded,
         assignmentCount: job.assignments.length,
         volunteerNames: job.assignments.map((a) => a.name).filter(Boolean) as string[],
@@ -136,10 +164,10 @@ export default async function HelpWantedPage() {
             <h1 className="text-2xl sm:text-4xl font-bold tracking-tight">
               Volunteer Signup
             </h1>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-muted-foreground max-w-md mx-auto">
+            <p className="mt-2 sm:mt-3 text-base sm:text-lg text-muted-foreground max-w-md mx-auto">
               Browse upcoming jobs and sign up for a shift below.
             </p>
-            <div className="mt-3 sm:mt-4 flex items-center justify-center gap-3 sm:gap-4 text-xs sm:text-sm">
+            <div className="mt-3 sm:mt-4 flex items-center justify-center gap-3 sm:gap-4 text-sm sm:text-base">
               <Link
                 href="/schedule"
                 className="text-primary hover:underline font-medium"

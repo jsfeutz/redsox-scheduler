@@ -13,9 +13,12 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import {
+  AuthBrandingMark,
+  AuthOrgTitle,
+} from "@/components/branding/auth-branding-mark";
 
 function LoginForm() {
   const router = useRouter();
@@ -117,12 +120,8 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-sm relative z-10 shadow-2xl shadow-black/20 border-border/50 rounded-2xl">
         <CardHeader className="text-center pb-2 pt-8">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white text-xl font-black shadow-lg shadow-primary/30">
-            RR
-          </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">
-            Rubicon Redsox
-          </CardTitle>
+          <AuthBrandingMark />
+          <AuthOrgTitle className="text-2xl font-bold tracking-tight" />
           <CardDescription className="text-muted-foreground">
             Baseball scheduling &amp; volunteer management
           </CardDescription>

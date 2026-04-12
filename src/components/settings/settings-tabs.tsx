@@ -60,6 +60,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { TemplateForm } from "@/components/jobs/template-form";
+import { BrandingIconSetting } from "@/components/settings/branding-icon-setting";
 import { format } from "date-fns";
 
 interface TemplateData {
@@ -95,6 +96,7 @@ interface SettingsTabsProps {
   requiredVolunteerHours: number;
   primaryColor: string;
   themeMode: string;
+  brandingIconVersion: number;
   smsEnabled: boolean;
   reminderHoursBefore: string;
   isAdmin: boolean;
@@ -114,6 +116,7 @@ export function SettingsTabs({
   requiredVolunteerHours,
   primaryColor,
   themeMode,
+  brandingIconVersion,
   smsEnabled: initialSmsEnabled,
   reminderHoursBefore: initialReminderHours,
   isAdmin,
@@ -194,6 +197,10 @@ export function SettingsTabs({
           )}
 
           {isAdmin && (
+            <BrandingIconSetting brandingIconVersion={brandingIconVersion} />
+          )}
+
+          {isAdmin && (
             <SmsNotificationSetting
               initialSmsEnabled={initialSmsEnabled}
               initialReminderHours={initialReminderHours}
@@ -222,6 +229,7 @@ export function SettingsTabs({
           <SchedulingRulesManager teams={teams} />
         </TabsContent>
       )}
+
     </Tabs>
   );
 }
@@ -1859,3 +1867,4 @@ function SchedulingRulesManager({ teams }: { teams: TeamOption[] }) {
     </div>
   );
 }
+

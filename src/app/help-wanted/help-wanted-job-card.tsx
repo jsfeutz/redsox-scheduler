@@ -10,6 +10,7 @@ interface HelpWantedJobCardProps {
   job: {
     id: string;
     templateName: string;
+    templateDescription?: string | null;
     eventTitle: string;
     teamName: string;
     teamColor: string;
@@ -37,16 +38,16 @@ export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
       <div className="flex items-start justify-between gap-2 md:gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-            <span className="font-semibold text-xs md:text-sm">{job.templateName}</span>
+            <span className="font-semibold text-sm md:text-base">{job.templateName}</span>
             <Badge
               variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded text-[10px] md:text-[11px] px-1.5 py-0"
+              className="rounded text-xs md:text-sm px-2 py-0.5"
             >
               {spotsLeft > 0
                 ? `${spotsLeft} left`
                 : "Full"}
             </Badge>
-            <Badge variant="outline" className="rounded text-[10px] md:text-[11px] px-1.5 py-0">
+            <Badge variant="outline" className="rounded text-xs md:text-sm px-2 py-0.5">
               {job.hoursPerGame}h
             </Badge>
           </div>
@@ -64,12 +65,17 @@ export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
                 style={{ width: `${fillPct}%` }}
               />
             </div>
-            <span className="text-[10px] md:text-[11px] text-muted-foreground font-medium shrink-0">
+            <span className="text-xs md:text-sm text-muted-foreground font-medium shrink-0">
               {assignmentCount}/{job.slotsNeeded}
             </span>
           </div>
+          {!!job.templateDescription && (
+            <p className="mt-1 text-xs md:text-sm text-muted-foreground line-clamp-2">
+              {job.templateDescription}
+            </p>
+          )}
           {names.length > 0 && (
-            <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground truncate">
+            <p className={cn("text-xs md:text-sm text-muted-foreground truncate", job.templateDescription ? "mt-0.5" : "mt-1")}>
               {names.join(", ")}
             </p>
           )}
@@ -79,6 +85,7 @@ export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
             <PublicJobSignup
               jobId={job.id}
               jobName={job.templateName}
+              jobDescription={job.templateDescription ?? null}
               eventTitle={job.eventTitle}
               eventDate={job.date}
               eventTime={job.time}

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Search, Plus, Users, Calendar, Pencil, Trash2 } from "lucide-react";
+import { Search, Plus, Users, Calendar, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -149,10 +149,23 @@ export function TeamsView({ teams, isAdmin }: Props) {
                 <CardContent className="p-3 md:p-4">
                   <div className="flex items-center gap-3">
                     <div
-                      className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0"
+                      className="h-14 w-14 md:h-16 md:w-16 rounded-xl flex items-center justify-center text-white shrink-0 shadow-md"
                       style={{ backgroundColor: team.color }}
                     >
-                      {team.icon || team.name.split(/\s|-/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                      {team.icon ? (
+                        <span className="text-3xl md:text-4xl leading-none select-none" aria-hidden>
+                          {team.icon}
+                        </span>
+                      ) : (
+                        <span className="font-bold text-sm md:text-base tracking-tight">
+                          {team.name
+                            .split(/\s|-/)
+                            .map((w) => w[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -180,20 +193,6 @@ export function TeamsView({ teams, isAdmin }: Props) {
                     </div>
                     {isAdmin && (
                       <StopPropagation className="hidden md:flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <TeamForm
-                          team={{
-                            id: team.id,
-                            name: team.name,
-                            ageGroup: team.ageGroup,
-                            color: team.color,
-                            headCoachId: team.headCoachId,
-                          }}
-                          trigger={
-                            <Button variant="ghost" size="icon-sm">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          }
-                        />
                         <DeleteTeamDialog
                           teamId={team.id}
                           teamName={team.name}

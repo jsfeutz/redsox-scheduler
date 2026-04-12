@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useLayoutEffect,
+} from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   format,
@@ -63,12 +71,20 @@ import { EventDetail } from "./event-detail";
 import { TimeSlotRequests, TimeSlotRequestsBadge } from "./time-slot-requests";
 import { CalendarSubscribeButton } from "./calendar-subscribe-button";
 import { FacilityFilterCombobox } from "./facility-filter-combobox";
+import { ShareScheduleButton } from "./share-schedule-button";
+import {
+  buildAdminScheduleUrlParams,
+  parseAdminScheduleUrl,
+  stableQueryString,
+} from "@/lib/schedule-url-params";
+import { TeamMiniAvatar } from "@/components/teams/team-mini-avatar";
 
 
 interface Team {
   id: string;
   name: string;
   color: string;
+  icon?: string | null;
   headCoach?: { name: string } | null;
 }
 
@@ -80,6 +96,7 @@ interface SubFacility {
 interface Facility {
   id: string;
   name: string;
+  color?: string;
   subFacilities: SubFacility[];
 }
 
@@ -126,7 +143,14 @@ interface ScheduleEventData {
   gameVenue?: string | null;
   noJobs?: boolean;
   cancelledByBumpId?: string | null;
-  team?: { id: string; name: string; color: string; headCoach?: { name: string } | null } | null;
+  team?: {
+    id: string;
+    name: string;
+    color: string;
+    icon?: string | null;
+    headCoach?: { name: string } | null;
+  } | null;
+  taggedTeams?: { team: { id: string; name: string; color: string } }[];
   subFacility?: {
     id: string;
     name: string;
@@ -143,6 +167,8 @@ interface ScheduleViewProps {
   canBump: boolean;
   isAdmin?: boolean;
   userTeams?: Team[];
+  /** IDs of teams the current user can manage (empty = all, for admins). */
+  userTeamIds?: string[];
   /** When set, calendar is scoped to this team (hides team picker, optional home/away game filter). */
   lockedTeamId?: string;
   /** SessionStorage key for view mode (default `schedule-viewMode`). Use per-team keys on team pages. */
@@ -162,6 +188,37 @@ interface BlackoutData {
 }
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+type ColorBy = "facility" | "team";
+
+type ScheduleColorLegendItem =
+  | { label: string; color: string }
+  | { label: string; color: string; icon: string | null };
+
+const FACILITY_COLORS = [
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#a855f7",
+  "#f97316",
+  "#eab308",
+  "#ef4444",
+  "#14b8a6",
+  "#f43f5e",
+  "#84cc16",
+];
+
+function hashToIndex(input: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) >>> 0;
+  return mod ? h % mod : 0;
+}
+
+function getEventFacilityKey(e: ScheduleEventData): string | null {
+  if (e.subFacility?.facility?.id) return e.subFacility.facility.id;
+  if (e.customLocation) return `custom:${e.customLocation}`;
+  return null;
+}
 
 function getTypeLabel(type: string, gameVenue?: string | null) {
   if (type === "GAME") return gameVenue === "AWAY" ? "Away Game" : "Home Game";
@@ -198,10 +255,15 @@ export function ScheduleView({
   canBump,
   isAdmin = false,
   userTeams = [],
+  userTeamIds = [],
   lockedTeamId,
   viewModeStorageKey,
   onScheduleChanged,
 }: ScheduleViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const isMobile = useIsMobile();
   const storageKey = viewModeStorageKey ?? "schedule-viewMode";
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -224,6 +286,11 @@ export function ScheduleView({
   const [showAwayGames, setShowAwayGames] = useState(false);
   const [gameVenueFilter, setGameVenueFilter] = useState<"all" | "home" | "away">("all");
   const [agendaSearch, setAgendaSearch] = useState("");
+  const [colorBy, setColorBy] = useState<ColorBy>(() => {
+    if (typeof window === "undefined") return "facility";
+    const saved = sessionStorage.getItem("schedule-colorBy");
+    return saved === "team" || saved === "facility" ? (saved as ColorBy) : "facility";
+  });
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createDate, setCreateDate] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] =
@@ -233,9 +300,62 @@ export function ScheduleView({
   const [selectedBlackout, setSelectedBlackout] = useState<BlackoutData | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const hydratedFromUrl = useRef(false);
+  useLayoutEffect(() => {
+    if (hydratedFromUrl.current) return;
+    hydratedFromUrl.current = true;
+    const p = parseAdminScheduleUrl(
+      new URLSearchParams(searchParams.toString()),
+      lockedTeamId
+    );
+    setViewMode(p.viewMode);
+    setCurrentDate(p.currentDate);
+    setFilterTeamId(p.filterTeamId);
+    setFilterSubFacilityId(p.filterSubFacilityId);
+    setShowAwayGames(p.showAwayGames);
+    setGameVenueFilter(p.gameVenueFilter);
+    setAgendaSearch(p.agendaSearch);
+  }, [searchParams, lockedTeamId]);
+
+  const adminUrlParamsBuilt = useMemo(
+    () =>
+      buildAdminScheduleUrlParams({
+        viewMode,
+        currentDate,
+        filterTeamId,
+        filterSubFacilityId,
+        showAwayGames,
+        gameVenueFilter,
+        agendaSearch,
+        lockedTeamId,
+      }),
+    [
+      viewMode,
+      currentDate,
+      filterTeamId,
+      filterSubFacilityId,
+      showAwayGames,
+      gameVenueFilter,
+      agendaSearch,
+      lockedTeamId,
+    ]
+  );
+
+  useEffect(() => {
+    const next = stableQueryString(adminUrlParamsBuilt);
+    const cur = stableQueryString(new URLSearchParams(searchParams.toString()));
+    if (next === cur) return;
+    const qs = adminUrlParamsBuilt.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [adminUrlParamsBuilt, pathname, router, searchParams]);
+
   useEffect(() => {
     sessionStorage.setItem(storageKey, viewMode);
   }, [viewMode, storageKey]);
+
+  useEffect(() => {
+    sessionStorage.setItem("schedule-colorBy", colorBy);
+  }, [colorBy]);
 
   useEffect(() => {
     if (lockedTeamId) setFilterTeamId(lockedTeamId);
@@ -251,6 +371,44 @@ export function ScheduleView({
     : showAwayGames
       ? events
       : events.filter((e) => e.gameVenue !== "AWAY");
+
+  const eventColor = useCallback((event: ScheduleEventData): string => {
+    if (colorBy === "team") return event.team?.color ?? "#6b7280";
+    const key = getEventFacilityKey(event);
+    if (!key) return "#6b7280";
+    // If key is a real facility id, prefer admin-set facility color
+    const fac = facilities.find((f) => f.id === key);
+    // Treat default slate as "unset" so facilities don't all look identical.
+    if (fac?.color && fac.color.toLowerCase() !== "#64748b") return fac.color;
+    return FACILITY_COLORS[hashToIndex(key, FACILITY_COLORS.length)];
+  }, [colorBy, facilities]);
+
+  const colorLegendItems = useMemo((): ScheduleColorLegendItem[] => {
+    if (colorBy === "team") {
+      const byTeam = new Map<string, { label: string; color: string; icon: string | null }>();
+      for (const e of filteredEvents) {
+        const t = e.team;
+        if (!t?.id) continue;
+        if (!byTeam.has(t.id))
+          byTeam.set(t.id, {
+            label: t.name,
+            color: t.color,
+            icon: t.icon ?? null,
+          });
+      }
+      return Array.from(byTeam.values()).sort((a, b) =>
+        a.label.localeCompare(b.label)
+      );
+    }
+    const byFac = new Map<string, { label: string; color: string }>();
+    for (const e of filteredEvents) {
+      if (!e.subFacility?.facility?.id) continue;
+      const key = e.subFacility.facility.id;
+      const label = e.subFacility.facility.name;
+      if (!byFac.has(key)) byFac.set(key, { label, color: eventColor(e) });
+    }
+    return Array.from(byFac.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [colorBy, filteredEvents, eventColor]);
 
   const venueFilterActive = lockedTeamId
     ? gameVenueFilter !== "all"
@@ -315,6 +473,22 @@ export function ScheduleView({
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  const openedEventFromUrl = useRef(false);
+  useEffect(() => {
+    if (openedEventFromUrl.current || loading || events.length === 0) return;
+    const eventId = searchParams.get("event");
+    if (!eventId) return;
+    const match = events.find((e) => e.id === eventId);
+    if (match) {
+      openedEventFromUrl.current = true;
+      setSelectedEvent(match);
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.delete("event");
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [events, loading, searchParams, pathname, router]);
 
   function navigatePrev() {
     if (viewMode === "agenda") return;
@@ -425,23 +599,23 @@ export function ScheduleView({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-4 md:h-auto">
-      {/* ===== MOBILE TOOLBAR ===== */}
-      <div className="md:hidden flex flex-col gap-1.5 shrink-0 pb-2">
+      {/* ===== MOBILE TOOLBAR (larger type + touch targets; key lives under Filters) ===== */}
+      <div className="md:hidden flex flex-col gap-2 shrink-0 pb-2">
         {/* Row 1: date navigation (month/week only — agenda lists all events, no range) */}
         {viewMode !== "agenda" && (
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={navigatePrev}>
-              <ChevronLeft className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 touch-manipulation" onClick={navigatePrev}>
+              <ChevronLeft className="h-5 w-5" />
             </Button>
             <button
               type="button"
-              className="text-sm font-semibold truncate flex-1 min-w-0 text-center px-1 py-1.5 rounded-md active:opacity-70 active:bg-muted/50"
+              className="text-base font-semibold truncate flex-1 min-w-0 text-center px-2 py-2.5 rounded-lg active:opacity-70 active:bg-muted/50 touch-manipulation"
               onClick={() => setCurrentDate(new Date())}
             >
               {headerLabel}
             </button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={navigateNext}>
-              <ChevronRight className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 touch-manipulation" onClick={navigateNext}>
+              <ChevronRight className="h-5 w-5" />
             </Button>
           </div>
         )}
@@ -452,30 +626,33 @@ export function ScheduleView({
           onValueChange={(v) => { if (v) setViewMode(v as "month" | "week" | "agenda"); }}
           className="w-full"
         >
-          <TabsList className="w-full grid grid-cols-3 h-9">
-            <TabsTrigger value="agenda" className="text-[11px] h-8 px-0">
-              <List className="h-3.5 w-3.5 mr-0.5 shrink-0" />Agenda
+          <TabsList className="w-full grid grid-cols-3 h-auto min-h-11 p-1 gap-1">
+            <TabsTrigger value="agenda" className="text-sm min-h-10 px-1 py-2 touch-manipulation">
+              <List className="h-4 w-4 mr-1 shrink-0" />
+              Agenda
             </TabsTrigger>
-            <TabsTrigger value="week" className="text-[11px] h-8 px-0">
-              <CalendarDays className="h-3.5 w-3.5 mr-0.5 shrink-0" />Week
+            <TabsTrigger value="week" className="text-sm min-h-10 px-1 py-2 touch-manipulation">
+              <CalendarDays className="h-4 w-4 mr-1 shrink-0" />
+              Week
             </TabsTrigger>
-            <TabsTrigger value="month" className="text-[11px] h-8 px-0">
-              <CalendarIcon className="h-3.5 w-3.5 mr-0.5 shrink-0" />Month
+            <TabsTrigger value="month" className="text-sm min-h-10 px-1 py-2 touch-manipulation">
+              <CalendarIcon className="h-4 w-4 mr-1 shrink-0" />
+              Month
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
         {/* Row 3: all teams (main schedule) or home/away (team tab) */}
         {!lockedTeamId && teams.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5 -mx-1 px-1 touch-pan-x">
-            <span className="text-[10px] text-muted-foreground shrink-0 font-medium uppercase tracking-wide">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1 touch-pan-x">
+            <span className="text-sm text-muted-foreground shrink-0 font-semibold uppercase tracking-wide">
               Teams
             </span>
             <button
               type="button"
               onClick={() => setFilterTeamId("")}
               className={cn(
-                "px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors",
+                "min-h-10 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap shrink-0 transition-colors touch-manipulation",
                 !filterTeamId
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground"
@@ -489,24 +666,21 @@ export function ScheduleView({
                 type="button"
                 onClick={() => setFilterTeamId(t.id)}
                 className={cn(
-                  "max-w-[140px] px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5",
+                  "max-w-[min(12rem,55vw)] min-h-10 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-2 touch-manipulation",
                   filterTeamId === t.id
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground"
                 )}
               >
-                <span
-                  className="h-2 w-2 rounded-full shrink-0"
-                  style={{ backgroundColor: filterTeamId === t.id ? "currentColor" : t.color }}
-                />
+                <TeamMiniAvatar name={t.name} color={t.color} icon={t.icon} size="sm" />
                 <span className="truncate">{t.name}</span>
               </button>
             ))}
           </div>
         )}
         {lockedTeamId && (
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5 -mx-1 px-1 touch-pan-x">
-            <span className="text-[10px] text-muted-foreground shrink-0 font-medium uppercase tracking-wide">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1 touch-pan-x">
+            <span className="text-sm text-muted-foreground shrink-0 font-semibold uppercase tracking-wide">
               Games
             </span>
             {(["all", "home", "away"] as const).map((k) => (
@@ -515,7 +689,7 @@ export function ScheduleView({
                 type="button"
                 onClick={() => setGameVenueFilter(k)}
                 className={cn(
-                  "px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap shrink-0 transition-colors",
+                  "min-h-10 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap shrink-0 transition-colors touch-manipulation",
                   gameVenueFilter === k
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground"
@@ -527,56 +701,107 @@ export function ScheduleView({
           </div>
         )}
 
-        {/* Row 4: filters + live feed + new event */}
-        <div className="flex items-center gap-2">
+        {/* Row 4: filters + actions (color key moved into Filters panel) */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
             className={cn(
-              "flex items-center gap-1.5 h-9 min-w-0 flex-1 px-2.5 rounded-md border text-xs font-medium transition-colors",
+              "flex items-center justify-center gap-2 min-h-11 h-11 min-w-0 flex-1 px-3 rounded-xl border text-sm font-medium transition-colors touch-manipulation",
               mobileFiltersOpen
                 ? "bg-primary/10 text-primary border-primary/25"
-                : "border-border bg-background text-muted-foreground hover:bg-muted/40"
+                : "border-border bg-background text-foreground hover:bg-muted/40"
             )}
           >
-            <Filter className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Filters</span>
+            <Filter className="h-4 w-4 shrink-0" />
+            <span className="truncate">Filters & key</span>
             {hasActiveFilters && (
               <span className="h-2 w-2 rounded-full bg-primary shrink-0" aria-hidden />
             )}
           </button>
-          <CalendarSubscribeButton icalPath={scheduleIcalPath} variant="compact" />
-          {canManage && (
-            <Button
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <CalendarSubscribeButton icalPath={scheduleIcalPath} variant="compact" />
+            <ShareScheduleButton compact />
+            <TimeSlotRequestsBadge compact onClick={() => setShowRequests(true)} />
+            {canManage && (
+              <Button
+                size="icon"
+                className="h-11 w-11 min-h-11 min-w-11 shrink-0 touch-manipulation"
+                onClick={() => { setCreateDate(new Date()); setShowCreateForm(true); }}
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Collapsible filters (facility, away games, etc.) — team picker is chips above */}
+        {/* Collapsible: facility, away games, color-by, legend */}
         {mobileFiltersOpen && (
-          <div className="flex flex-col gap-2 p-2 rounded-lg border bg-card animate-in slide-in-from-top-2 fade-in duration-150">
+          <div className="flex flex-col gap-3 p-3 rounded-xl border bg-card shadow-sm animate-in slide-in-from-top-2 fade-in duration-150">
             <FacilityFilterCombobox
               facilities={facilities}
               value={filterSubFacilityId}
               onValueChange={setFilterSubFacilityId}
-              size="sm"
+              triggerClassName="min-h-11 h-11 text-base py-0"
             />
+
+            <Select
+              value={colorBy}
+              onValueChange={(v) => {
+                if (v === "facility" || v === "team") setColorBy(v);
+              }}
+            >
+              <SelectTrigger className="w-full min-h-11 text-base">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="facility">Color: Facility</SelectItem>
+                <SelectItem value="team">Color: Team</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {colorLegendItems.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-semibold text-foreground">Key</span>
+                <div className="flex flex-wrap gap-2">
+                  {colorLegendItems.slice(0, 24).map((it) => (
+                    <div
+                      key={it.label}
+                      className="flex items-start gap-2 max-w-full rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-sm text-foreground"
+                      title={it.label}
+                    >
+                      {"icon" in it ? (
+                        <TeamMiniAvatar
+                          name={it.label}
+                          color={it.color}
+                          icon={it.icon}
+                          size="sm"
+                          className="mt-0.5"
+                        />
+                      ) : (
+                        <span
+                          className="h-3 w-3 rounded-full shrink-0 mt-0.5"
+                          style={{ backgroundColor: it.color }}
+                        />
+                      )}
+                      <span className="break-words leading-snug">{it.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {lockedTeamId ? (
-              <div className="flex flex-col gap-1.5">
-                <Label className="text-xs text-muted-foreground">Games</Label>
-                <div className="flex flex-wrap gap-1">
+              <div className="flex flex-col gap-2">
+                <Label className="text-sm font-medium text-foreground">Games</Label>
+                <div className="flex flex-wrap gap-2">
                   {(["all", "home", "away"] as const).map((k) => (
                     <button
                       key={k}
                       type="button"
                       onClick={() => setGameVenueFilter(k)}
                       className={cn(
-                        "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+                        "min-h-10 px-3 py-2 rounded-full text-sm font-medium transition-colors touch-manipulation",
                         gameVenueFilter === k
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground"
@@ -588,10 +813,12 @@ export function ScheduleView({
                 </div>
               </div>
             ) : (
-            <div className="flex items-center gap-1.5">
-              <Checkbox id="show-away-m" checked={showAwayGames} onCheckedChange={(c) => setShowAwayGames(!!c)} />
-              <Label htmlFor="show-away-m" className="text-xs text-muted-foreground cursor-pointer">Show away games</Label>
-            </div>
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox id="show-away-m" checked={showAwayGames} onCheckedChange={(c) => setShowAwayGames(!!c)} />
+                <Label htmlFor="show-away-m" className="text-sm font-medium text-foreground cursor-pointer leading-snug">
+                  Show away games
+                </Label>
+              </div>
             )}
           </div>
         )}
@@ -629,9 +856,18 @@ export function ScheduleView({
               <SelectItem value="__all__">All Teams</SelectItem>
               {teams.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  <span className="inline-block h-2.5 w-2.5 rounded-full mr-1.5" style={{ backgroundColor: t.color }} />
-                  {t.name}
-                  {t.headCoach && <span className="text-muted-foreground"> - {t.headCoach.name}</span>}
+                  <span className="inline-flex items-center gap-2">
+                    <TeamMiniAvatar name={t.name} color={t.color} icon={t.icon} size="sm" />
+                    <span>
+                      {t.name}
+                      {t.headCoach && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          - {t.headCoach.name}
+                        </span>
+                      )}
+                    </span>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -643,6 +879,16 @@ export function ScheduleView({
             value={filterSubFacilityId}
             onValueChange={setFilterSubFacilityId}
           />
+
+          <Select value={colorBy} onValueChange={(v) => { if (v === "facility" || v === "team") setColorBy(v); }}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="facility">Color: Facility</SelectItem>
+              <SelectItem value="team">Color: Team</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Tabs
             value={viewMode}
@@ -690,6 +936,8 @@ export function ScheduleView({
 
           <CalendarSubscribeButton icalPath={scheduleIcalPath} />
 
+          <ShareScheduleButton />
+
           <TimeSlotRequestsBadge onClick={() => setShowRequests(true)} />
 
           {canManage && (
@@ -701,6 +949,37 @@ export function ScheduleView({
         </div>
       </div>
 
+      {/* ===== DESKTOP KEY ===== */}
+      {colorLegendItems.length > 0 && (
+        <div className="hidden md:flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+            Key
+          </span>
+          {colorLegendItems.slice(0, 20).map((it) => (
+            <div
+              key={it.label}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium bg-muted/40 text-muted-foreground"
+              title={it.label}
+            >
+              {"icon" in it ? (
+                <TeamMiniAvatar
+                  name={it.label}
+                  color={it.color}
+                  icon={it.icon}
+                  size="sm"
+                />
+              ) : (
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: it.color }}
+                />
+              )}
+              <span className="max-w-[160px] truncate">{it.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ===== SCROLLABLE CONTENT AREA ===== */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto md:overflow-visible min-h-0">
         {/* Month / Week grid */}
@@ -710,9 +989,9 @@ export function ScheduleView({
               {WEEK_DAYS.map((day) => (
                 <div
                   key={day}
-                  className="px-1 md:px-2 py-1.5 md:py-2.5 text-center text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                  className="px-1 md:px-2 py-2 md:py-2.5 text-center text-sm md:text-xs font-semibold text-muted-foreground uppercase tracking-wide"
                 >
-                  {isMobile ? day[0] : day}
+                  {isMobile ? day.slice(0, 3) : day}
                 </div>
               ))}
             </div>
@@ -743,11 +1022,11 @@ export function ScheduleView({
                     <div className="flex items-center justify-between px-0.5 mb-0.5">
                       <span
                         className={cn(
-                          "text-[10px] md:text-xs",
+                          "text-sm md:text-xs font-medium",
                           !inMonth && "text-muted-foreground/40",
                           inMonth && "text-muted-foreground",
                           today &&
-                            "flex h-5 w-5 md:h-6 md:w-6 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold"
+                            "flex h-7 w-7 md:h-6 md:w-6 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm md:text-xs"
                         )}
                       >
                         {format(day, "d")}
@@ -775,25 +1054,43 @@ export function ScheduleView({
 
                     <div className="space-y-0.5">
                       {visible.map((event) => {
-                        const bgColor = event.team?.color ?? "#6b7280";
+                        const bgColor = eventColor(event);
                         return (
                           <button
                             key={event.id}
-                            className="group/pill w-full truncate rounded px-1 md:px-1.5 py-[2px] md:py-[3px] text-left text-[9px] md:text-[11px] font-medium leading-tight text-white transition-all hover:opacity-90"
+                            className="group/pill w-full truncate rounded px-1 md:px-1.5 py-1 md:py-[3px] text-left text-sm md:text-[11px] font-medium leading-snug text-white transition-all hover:opacity-90 touch-manipulation"
                             style={{ backgroundColor: bgColor }}
                             onClick={(e) => handleEventClick(event, e)}
                           >
-                            <span className="opacity-75">
-                              {format(parseISO(event.startTime), "h:mma").toLowerCase()}
-                            </span>
-                            <span className="hidden md:inline">
-                              {" "}{event.team?.name ?? "Club"} - {getTypeLabel(event.type, event.gameVenue)}
+                            <span className="flex items-center gap-0.5 min-w-0">
+                              {event.team?.icon && (
+                                <span
+                                  className="shrink-0 text-sm md:text-[13px] leading-none drop-shadow-sm"
+                                  aria-hidden
+                                >
+                                  {event.team.icon}
+                                </span>
+                              )}
+                              <span className="min-w-0 truncate">
+                                <span className="opacity-75">
+                                  {format(parseISO(event.startTime), "h:mma").toLowerCase()}
+                                </span>
+                                <span className="md:hidden">
+                                  {" "}
+                                  {event.team?.name ?? "Club"}
+                                </span>
+                                <span className="hidden md:inline">
+                                  {" "}
+                                  {event.team?.name ?? "Club"} -{" "}
+                                  {getTypeLabel(event.type, event.gameVenue)}
+                                </span>
+                              </span>
                             </span>
                           </button>
                         );
                       })}
                       {overflow > 0 && (
-                        <p className="px-0.5 text-[9px] md:text-[10px] text-muted-foreground font-medium">
+                        <p className="px-0.5 text-sm md:text-xs text-muted-foreground font-medium">
                           +{overflow}
                         </p>
                       )}
@@ -808,25 +1105,25 @@ export function ScheduleView({
         {/* Agenda view */}
         {viewMode === "agenda" && (
           <div>
-            <div className="flex flex-col gap-2 mb-2">
+            <div className="flex flex-col gap-3 mb-3">
               <div className="relative w-full">
                 <Search
-                  className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
+                  className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground pointer-events-none"
                   aria-hidden
                 />
                 <Input
                   value={agendaSearch}
                   onChange={(e) => setAgendaSearch(e.target.value)}
                   placeholder="Search agenda (title, team, location, type…)"
-                  className="h-9 pl-9 text-sm"
+                  className="h-12 pl-11 text-base"
                   aria-label="Search agenda events"
                 />
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
               <Button
                 variant="outline"
-                size="sm"
-                className="text-xs h-9 gap-1 w-full sm:w-auto"
+                size="default"
+                className="text-sm min-h-11 h-11 gap-2 w-full sm:w-auto touch-manipulation"
                 onClick={() => {
                   const rows: string[] = [];
                   for (const day of agendaDays) {
@@ -841,7 +1138,7 @@ export function ScheduleView({
                       const tl = getTypeLabel(evt.type, evt.gameVenue);
                       const team = evt.team?.name ?? "Club Event";
                       const loc = evt.subFacility ? `${evt.subFacility.facility.name} – ${evt.subFacility.name}` : evt.customLocation ?? "";
-                      const color = evt.team?.color ?? "#6b7280";
+                      const color = eventColor(evt as unknown as ScheduleEventData);
                       rows.push(`<tr>
                         <td style="padding:6px 8px 6px 12px;width:12px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color}"></span></td>
                         <td style="padding:6px 4px;font-weight:500">${evt.title}</td>
@@ -871,7 +1168,7 @@ tr:hover td{background:#fafafa}
                   pw.onload = () => { pw.print(); };
                 }}
               >
-                <Download className="h-3 w-3" />
+                <Download className="h-4 w-4" />
                 Export PDF
               </Button>
               </div>
@@ -885,27 +1182,27 @@ tr:hover td{background:#fafafa}
               return (
                 <div key={day.toISOString()}>
                   <div className={cn(
-                    "px-3 md:px-4 py-1.5 md:py-2 bg-muted/50 flex items-center gap-2 sticky top-0 z-10",
+                    "px-3 md:px-4 py-2 md:py-2.5 bg-muted/50 flex flex-wrap items-center gap-2 sticky top-0 z-10",
                     today && "bg-primary/10",
                     dayBlackouts.length > 0 && "bg-red-50 dark:bg-red-950/20"
                   )}>
                     <span className={cn(
-                      "text-xs md:text-sm font-semibold",
+                      "text-base md:text-sm font-semibold",
                       today && "text-primary"
                     )}>
                       {format(day, "EEE, MMM d")}
                     </span>
                     {today && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Today</Badge>
+                      <Badge variant="secondary" className="text-sm px-2 py-0.5">Today</Badge>
                     )}
                     {dayBlackouts.map((b) => (
                       <Badge
                         key={b.id}
                         variant="destructive"
-                        className="text-[10px] px-1.5 py-0 cursor-pointer hover:opacity-80 transition-opacity"
+                        className="text-sm px-2 py-0.5 cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => setSelectedBlackout(b)}
                       >
-                        <Ban className="h-2.5 w-2.5 mr-0.5" />
+                        <Ban className="h-3.5 w-3.5 mr-1" />
                         {b.title}
                       </Badge>
                     ))}
@@ -915,7 +1212,7 @@ tr:hover td{background:#fafafa}
                       const start = parseISO(event.startTime);
                       const end = parseISO(event.endTime);
                       const typeLabel = getTypeLabel(event.type, event.gameVenue);
-                      const bgColor = event.team?.color ?? "#6b7280";
+                      const bgColor = eventColor(event);
                       const teamName = event.team?.name ?? "Club Event";
                       const locationLabel = event.subFacility
                         ? `${event.subFacility.facility.name} – ${event.subFacility.name}`
@@ -923,33 +1220,51 @@ tr:hover td{background:#fafafa}
                       return (
                         <button
                           key={event.id}
-                          className="w-full px-3 md:px-4 py-2 md:py-2.5 text-left active:bg-accent/40 md:hover:bg-accent/30 transition-colors"
+                          className="w-full px-3 md:px-4 py-3 text-left active:bg-accent/40 md:hover:bg-accent/30 transition-colors touch-manipulation"
                           onClick={(e) => handleEventClick(event, e)}
                         >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2.5 w-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: bgColor }}
-                            />
-                            <span className="text-sm font-medium truncate flex-1">
-                              {event.title}
-                            </span>
-                            <Badge variant="secondary" className="text-[10px] shrink-0 px-1.5 py-0">
-                              {typeLabel}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-3 mt-0.5 ml-[18px] text-[11px] md:text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3 shrink-0" />
-                              {format(start, "h:mm a")} – {format(end, "h:mm a")}
-                            </span>
-                            <span className="truncate">{teamName}</span>
-                            {locationLabel && (
-                              <span className="truncate hidden sm:flex items-center gap-1">
-                                <MapPin className="h-3 w-3 shrink-0" />
-                                {locationLabel}
+                          <div className="flex gap-3">
+                            {event.team ? (
+                              <TeamMiniAvatar
+                                name={event.team.name}
+                                color={event.team.color}
+                                icon={event.team.icon}
+                                size="md"
+                                className="mt-0.5"
+                              />
+                            ) : (
+                              <span
+                                className="h-7 w-7 rounded-md shrink-0 mt-0.5 bg-muted flex items-center justify-center text-muted-foreground text-xs font-semibold"
+                                aria-hidden
+                              >
+                                ·
                               </span>
                             )}
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                <span className="text-base font-semibold leading-snug text-foreground">
+                                  {event.title}
+                                </span>
+                                <Badge variant="secondary" className="text-sm px-2 py-0.5 shrink-0">
+                                  {typeLabel}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-col gap-1.5 text-sm">
+                                <span className="flex items-center gap-2 text-muted-foreground">
+                                  <Clock className="h-4 w-4 shrink-0" />
+                                  {format(start, "h:mm a")} – {format(end, "h:mm a")}
+                                </span>
+                                <span className="font-medium text-foreground">
+                                  {teamName}
+                                </span>
+                                {locationLabel && (
+                                  <span className="flex items-start gap-2 text-muted-foreground">
+                                    <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
+                                    <span className="leading-snug">{locationLabel}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </button>
                       );
@@ -1025,7 +1340,10 @@ tr:hover td{background:#fafafa}
           open={!!selectedEvent}
           onClose={() => setSelectedEvent(null)}
           event={selectedEvent}
-          canManage={canManage}
+          canManage={
+            canManage &&
+            (isAdmin || userTeamIds.length === 0 || !selectedEvent.teamId || userTeamIds.includes(selectedEvent.teamId))
+          }
           onEdit={() => handleEdit(selectedEvent)}
           onDeleted={handleDeleted}
           userTeams={userTeams}

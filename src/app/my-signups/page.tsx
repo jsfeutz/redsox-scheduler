@@ -194,7 +194,7 @@ function MySignupsContent() {
                   If there are signups associated with that email, you&apos;ll
                   receive a link shortly. Check your inbox (and spam folder).
                 </p>
-                <p className="mt-4 text-xs text-muted-foreground">
+                <p className="mt-4 text-sm text-muted-foreground">
                   Testing locally?{" "}
                   <a
                     href="http://localhost:8025"
@@ -247,13 +247,13 @@ function MySignupsContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <Card className="rounded-2xl border-border/50">
                     <CardContent className="py-4 text-center">
-                      <p className="text-xs text-muted-foreground font-medium">Events</p>
+                      <p className="text-sm text-muted-foreground font-medium">Events</p>
                       <p className="text-2xl font-bold mt-1">{signups.length}</p>
                     </CardContent>
                   </Card>
                   <Card className="rounded-2xl border-border/50">
                     <CardContent className="py-4 text-center">
-                      <p className="text-xs text-muted-foreground font-medium">Total Hours</p>
+                      <p className="text-sm text-muted-foreground font-medium">Total Hours</p>
                       <p className="text-2xl font-bold mt-1">{signups.reduce((sum, s) => sum + (s.hoursEarned ?? 0), 0)}</p>
                     </CardContent>
                   </Card>
@@ -334,41 +334,41 @@ function SignupCard({
                   borderColor: signup.teamColor,
                   color: signup.teamColor,
                 }}
-                className="text-xs"
+                className="text-sm"
               >
                 {signup.teamName}
               </Badge>
               {signup.hoursEarned != null && (
-                <Badge variant="secondary" className="text-xs rounded-lg">
+                <Badge variant="secondary" className="text-sm rounded-lg">
                   {signup.hoursEarned}h
                 </Badge>
               )}
               {signup.isTeamRole && (
-                <Badge variant="secondary" className="text-xs rounded-lg">
+                <Badge variant="secondary" className="text-sm rounded-lg">
                   Team Role
                 </Badge>
               )}
               {isPast && !signup.isTeamRole && (
-                <Badge variant="secondary" className="text-xs rounded-lg">
+                <Badge variant="secondary" className="text-sm rounded-lg">
                   Past
                 </Badge>
               )}
             </div>
             {signup.playerName && (
-              <p className="mt-1 text-xs text-primary font-medium">
+              <p className="mt-1 text-sm text-primary font-medium">
                 Volunteering for {signup.playerName}
               </p>
             )}
-            <p className="mt-1 font-medium text-sm">{signup.eventTitle}</p>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <p className="mt-1 font-medium text-base">{signup.eventTitle}</p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
               {signup.startTime && (
                 <>
                   <span className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
+                    <Calendar className="h-4 w-4" />
                     {format(parseISO(signup.startTime), "EEEE, MMM d")}
                   </span>
                   <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
+                    <Clock className="h-4 w-4" />
                     {format(parseISO(signup.startTime), "h:mm a")}
                     {signup.endTime &&
                       ` – ${format(parseISO(signup.endTime), "h:mm a")}`}
@@ -376,7 +376,7 @@ function SignupCard({
                 </>
               )}
               <span className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
+                <MapPin className="h-4 w-4" />
                 {signup.facilityName}
                 {signup.subFacilityName && ` – ${signup.subFacilityName}`}
               </span>

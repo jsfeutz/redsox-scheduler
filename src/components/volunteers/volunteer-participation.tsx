@@ -52,11 +52,11 @@ interface ParticipationRow {
 }
 
 const STATUS_CONFIG = {
-  fulfilled: { label: "Fulfilled", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-500/10" },
+  fulfilled: { label: "Completed", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-500/10" },
   in_progress: { label: "In Progress", icon: Clock, color: "text-amber-600", bg: "bg-amber-500/10" },
   not_started: { label: "Not Started", icon: AlertCircle, color: "text-red-500", bg: "bg-red-500/10" },
-  contributed: { label: "Contributed", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-500/10" },
-  none: { label: "No Hours", icon: AlertCircle, color: "text-red-500", bg: "bg-red-500/10" },
+  contributed: { label: "Contributing", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-500/10" },
+  none: { label: "No Hours Yet", icon: AlertCircle, color: "text-muted-foreground", bg: "bg-muted" },
 };
 
 export function VolunteerParticipation() {
@@ -254,7 +254,15 @@ export function VolunteerParticipation() {
             ) : (
               sortedFiltered.map((row) => {
                 const isExpanded = expandedId === row.playerId;
-                const cfg = STATUS_CONFIG[row.status];
+                const baseCfg = STATUS_CONFIG[row.status];
+                const ratio =
+                  row.requiredHours > 0 ? row.totalHours / row.requiredHours : 0;
+                const cfg =
+                  row.status === "in_progress" && row.requiredHours > 0
+                    ? ratio >= 0.5
+                      ? { ...baseCfg, label: "On Track", color: "text-blue-600", bg: "bg-blue-500/10" }
+                      : { ...baseCfg, label: "Needs Attention", color: "text-amber-600", bg: "bg-amber-500/10" }
+                    : baseCfg;
                 const StatusIcon = cfg.icon;
                 return (
                   <>

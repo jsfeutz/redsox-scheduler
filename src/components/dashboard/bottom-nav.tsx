@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Calendar,
   Heart,
+  BarChart3,
   Settings,
   MoreHorizontal,
   MapPin,
@@ -16,6 +17,7 @@ import {
   Megaphone,
   UserCog,
   X,
+  Download,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -28,9 +30,11 @@ const primaryTabs = [
 
 const moreTabs: { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
+  { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
   { href: "/dashboard/profile", label: "Profile", icon: UserCog },
+  { href: "/install", label: "Install app", icon: Download },
 ];
 
 export function BottomNav() {
@@ -68,7 +72,7 @@ export function BottomNav() {
                   href={tab.href}
                   onClick={() => setMoreOpen(false)}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors touch-target",
+                    "flex items-center gap-3 rounded-xl px-4 py-3 text-base font-medium transition-colors touch-target",
                     active
                       ? "bg-primary/15 text-primary"
                       : "text-muted-foreground active:bg-accent/50"
@@ -81,7 +85,7 @@ export function BottomNav() {
             })}
             <button
               onClick={() => setMoreOpen(false)}
-              className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground w-full active:bg-accent/50 touch-target"
+              className="flex items-center gap-3 rounded-xl px-4 py-3 text-base font-medium text-muted-foreground w-full active:bg-accent/50 touch-target"
             >
               <X className="h-5 w-5 shrink-0" />
               Close
@@ -111,7 +115,7 @@ export function BottomNav() {
                   )}
                   strokeWidth={active ? 2.5 : 1.8}
                 />
-                <span className="text-[10px] font-semibold leading-tight">
+                <span className="text-xs font-semibold leading-snug max-w-[4.5rem] text-center">
                   {tab.label}
                 </span>
               </Link>
@@ -134,7 +138,7 @@ export function BottomNav() {
               )}
               strokeWidth={isMoreActive || moreOpen ? 2.5 : 1.8}
             />
-            <span className="text-[10px] font-semibold leading-tight">
+            <span className="text-xs font-semibold leading-snug">
               More
             </span>
           </button>

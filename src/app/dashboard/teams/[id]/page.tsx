@@ -147,7 +147,13 @@ export default async function TeamDetailPage({ params }: Props) {
   const [allTeams, facilities, seasons] = await Promise.all([
     prisma.team.findMany({
       where: { organizationId: user.organizationId, active: true },
-      select: { id: true, name: true, color: true, headCoach: { select: { name: true } } },
+      select: {
+        id: true,
+        name: true,
+        color: true,
+        icon: true,
+        headCoach: { select: { name: true } },
+      },
       orderBy: { name: "asc" },
     }),
     prisma.facility.findMany({
@@ -205,8 +211,8 @@ export default async function TeamDetailPage({ params }: Props) {
       conflictMap.set(
         evt.id,
         overlaps.map((c) => ({
-          teamName: (c as any).team?.name ?? "Club Event",
-          teamColor: (c as any).team?.color ?? "#6b7280",
+          teamName: (c as unknown as { team?: { name?: string | null } | null }).team?.name ?? "Club Event",
+          teamColor: (c as unknown as { team?: { color?: string | null } | null }).team?.color ?? "#6b7280",
           title: c.title,
           startTime: c.startTime.toISOString(),
           endTime: c.endTime.toISOString(),
@@ -238,15 +244,23 @@ export default async function TeamDetailPage({ params }: Props) {
     <div className="flex flex-col flex-1 min-h-0 md:block md:space-y-6">
       <div className="flex items-center gap-3 md:gap-4 shrink-0 py-2 md:py-0">
         <div
-          className="h-9 w-9 md:h-12 md:w-12 rounded-lg md:rounded-xl flex items-center justify-center text-white font-bold text-sm md:text-lg shrink-0 shadow-lg"
+          className="h-12 w-12 md:h-14 md:w-14 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg"
           style={{ backgroundColor: team.color }}
         >
-          {team.icon || team.name
-            .split(/\s|-/)
-            .map((w) => w[0])
-            .join("")
-            .slice(0, 2)
-            .toUpperCase()}
+          {team.icon ? (
+            <span className="text-3xl md:text-4xl leading-none select-none" aria-hidden>
+              {team.icon}
+            </span>
+          ) : (
+            <span className="font-bold text-sm md:text-base tracking-tight">
+              {team.name
+                .split(/\s|-/)
+                .map((w) => w[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+          )}
         </div>
         <div className="min-w-0">
           <h1 className="text-xl md:text-3xl font-bold tracking-tight truncate">{team.name}</h1>
@@ -280,7 +294,7 @@ export default async function TeamDetailPage({ params }: Props) {
           startTime: evt.startTime.toISOString(),
           endTime: evt.endTime.toISOString(),
           recurrenceGroupId: evt.recurrenceGroupId,
-          facility: evt.subFacility ? `${evt.subFacility.facility.name} - ${evt.subFacility.name}` : (evt as any).customLocation ?? "TBD",
+          facility: evt.subFacility ? `${evt.subFacility.facility.name} - ${evt.subFacility.name}` : evt.customLocation ?? "TBD",
           subFacilityId: evt.subFacilityId,
           seasonId: evt.seasonId,
           notes: evt.notes,

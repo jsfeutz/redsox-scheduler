@@ -1,5 +1,5 @@
-const CACHE_NAME = "redsox-v1";
-const PRECACHE_URLS = ["/", "/dashboard", "/login", "/manifest.json"];
+const CACHE_NAME = "redsox-v2";
+const PRECACHE_URLS = ["/", "/dashboard", "/login", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

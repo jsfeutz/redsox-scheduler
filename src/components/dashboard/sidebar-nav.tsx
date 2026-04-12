@@ -11,12 +11,16 @@ import {
   Calendar,
   Heart,
   Megaphone,
+  BarChart3,
   Settings,
   LogOut,
   ChevronRight,
   UserCog,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandingMark } from "@/components/branding/branding-mark";
+import { useBranding } from "@/components/branding/branding-context";
 
 const navItems: { href: string; label: string; icon: typeof Calendar; adminOnly?: boolean }[] = [
   { href: "/dashboard/schedules", label: "Schedule", icon: Calendar },
@@ -24,23 +28,24 @@ const navItems: { href: string; label: string; icon: typeof Calendar; adminOnly?
   { href: "/dashboard/teams", label: "Teams", icon: Users },
   { href: "/help-wanted", label: "Volunteer Signup", icon: Megaphone },
   { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
+  { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/install", label: "Install app", icon: Download },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { organizationName } = useBranding();
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 w-72 bg-sidebar border-r border-sidebar-border hidden md:flex flex-col">
       <div className="flex items-center gap-3 px-6 py-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-white font-black text-xs shadow-lg shadow-primary/25 shrink-0">
-          RR
-        </div>
+        <BrandingMark variant="sidebar" />
         <div className="min-w-0">
           <span className="text-base font-bold tracking-tight block">
-            Rubicon Redsox
+            {organizationName}
           </span>
           <span className="text-[11px] text-muted-foreground font-medium uppercase tracking-widest">
             Scheduler

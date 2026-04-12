@@ -53,6 +53,7 @@ export async function GET() {
       signupCount: number;
       eventCount: number;
       jobs: {
+        assignmentId: string;
         jobName: string;
         eventTitle: string;
         teamName: string;
@@ -78,6 +79,7 @@ export async function GET() {
     entry.totalHours += hours;
     entry.signupCount += 1;
     entry.jobs.push({
+      assignmentId: a.id,
       jobName: a.gameJob.jobTemplate.name,
       eventTitle: a.gameJob.scheduleEvent?.title ?? "Team-level",
       teamName: a.gameJob.scheduleEvent?.team?.name ?? "",

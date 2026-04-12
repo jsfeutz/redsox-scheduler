@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -25,6 +25,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Calendar,
   Briefcase,
@@ -115,7 +120,13 @@ interface EventSummary {
 }
 
 interface SchedulingData {
-  teams: { id: string; name: string; color: string; headCoach?: { name: string } | null }[];
+  teams: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string | null;
+    headCoach?: { name: string } | null;
+  }[];
   facilities: { id: string; name: string; subFacilities: { id: string; name: string }[] }[];
   seasons: { id: string; name: string; startDate: string | Date; endDate: string | Date }[];
   canSchedule: boolean;
@@ -301,18 +312,26 @@ export function TeamDetailTabs({
       </TabsContent>
 
       <TabsContent value="schedule" className="flex flex-col flex-1 min-h-0 overflow-hidden md:overflow-y-auto md:min-h-[28rem]">
-        <ScheduleView
-          teams={scheduling.teams}
-          facilities={scheduling.facilities}
-          seasons={scheduling.seasons}
-          canManage={scheduling.canSchedule}
-          canBump={scheduling.canBump}
-          isAdmin={isAdmin}
-          userTeams={scheduleUserTeams}
-          lockedTeamId={team.id}
-          viewModeStorageKey={`schedule-viewMode-team-${team.id}`}
-          onScheduleChanged={() => router.refresh()}
-        />
+        <Suspense
+          fallback={
+            <div className="text-sm text-muted-foreground py-8 text-center">
+              Loading schedule…
+            </div>
+          }
+        >
+          <ScheduleView
+            teams={scheduling.teams}
+            facilities={scheduling.facilities}
+            seasons={scheduling.seasons}
+            canManage={scheduling.canSchedule}
+            canBump={scheduling.canBump}
+            isAdmin={isAdmin}
+            userTeams={scheduleUserTeams}
+            lockedTeamId={team.id}
+            viewModeStorageKey={`schedule-viewMode-team-${team.id}`}
+            onScheduleChanged={() => router.refresh()}
+          />
+        </Suspense>
       </TabsContent>
 
       <TabsContent value="staff" className="overflow-y-auto min-h-0">
@@ -752,30 +771,166 @@ function TeamRoleCard({
 
 /* ========== Team Profile Settings ========== */
 
-const TEAM_ICONS = [
-  "⚾", "🥎", "🏀", "⚽", "🏈", "🏐", "🎾", "🏒", "🥊", "⭐",
-  "🔥", "💎", "🦅", "🐻", "🦁", "🐯", "🐺", "🦈", "🐎", "🐉",
-  "⚡", "🌪️", "🏆", "👑", "🎯", "💪", "🛡️", "⚔️", "🚀", "🎖️",
-];
+const DEFAULT_TEAM_COLOR = "#3b82f6";
 
-const TEAM_COLORS = [
-  "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
-  "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
-  "#84cc16", "#e11d48", "#0ea5e9", "#a855f7", "#10b981",
-  "#d946ef", "#64748b", "#dc2626", "#2563eb", "#16a34a",
-];
+function hexForColorInput(value: string): string {
+  const t = value.trim();
+  const withHash = t.startsWith("#") ? t : `#${t}`;
+  return /^#[0-9A-Fa-f]{6}$/.test(withHash)
+    ? withHash.toLowerCase()
+    : DEFAULT_TEAM_COLOR;
+}
+
+function parseHexOrNull(raw: string): string | null {
+  let t = raw.trim();
+  if (!t) return null;
+  if (!t.startsWith("#")) t = `#${t}`;
+  if (/^#[0-9A-Fa-f]{6}$/.test(t)) return t.toLowerCase();
+  return null;
+}
+
+const TEAM_ICONS = Array.from(
+  new Set([
+    "⚾",
+    "🥎",
+    "🏀",
+    "⚽",
+    "🏈",
+    "🏐",
+    "🎾",
+    "🏓",
+    "🏸",
+    "🥅",
+    "🏒",
+    "🥊",
+    "🥋",
+    "🎿",
+    "⛷️",
+    "🏂",
+    "🏄",
+    "🤿",
+    "🛼",
+    "🎯",
+    "🎳",
+    "🥏",
+    "🏹",
+    "🎣",
+    "🏆",
+    "🥇",
+    "🥈",
+    "🥉",
+    "🏅",
+    "🎖️",
+    "🎗️",
+    "🦅",
+    "🐻",
+    "🦁",
+    "🐯",
+    "🐺",
+    "🦈",
+    "🐎",
+    "🐉",
+    "🦖",
+    "🦕",
+    "🐊",
+    "🦬",
+    "🐂",
+    "🦌",
+    "🦉",
+    "🦊",
+    "🐱",
+    "🐶",
+    "🐝",
+    "🦋",
+    "⭐",
+    "✨",
+    "🔥",
+    "💎",
+    "⚡",
+    "🌪️",
+    "🌈",
+    "☀️",
+    "🌙",
+    "❄️",
+    "💧",
+    "👑",
+    "🛡️",
+    "⚔️",
+    "🚀",
+    "💪",
+    "🎪",
+    "🎨",
+    "🎸",
+    "🎺",
+    "🥁",
+    "🔔",
+    "📣",
+    "🏁",
+    "🚩",
+    "🎌",
+    "1️⃣",
+    "2️⃣",
+    "3️⃣",
+    "4️⃣",
+    "5️⃣",
+    "6️⃣",
+    "7️⃣",
+    "8️⃣",
+    "9️⃣",
+    "🔟",
+    "❤️",
+    "🧡",
+    "💙",
+    "💚",
+    "💜",
+    "🖤",
+    "🤍",
+    "💛",
+    "🎁",
+    "🎂",
+    "🍀",
+    "🌸",
+    "🌻",
+    "🌴",
+    "⛳",
+    "🎮",
+    "🕹️",
+    "🧢",
+    "👟",
+    "🧤",
+  ])
+);
 
 function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: boolean }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(team.name);
+  const [ageGroup, setAgeGroup] = useState(team.ageGroup || "");
   const [icon, setIcon] = useState(team.icon || "");
   const [color, setColor] = useState(team.color);
   const [active, setActive] = useState(team.active);
-  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
+  const lastGoodColor = useRef(team.color);
+
+  useEffect(() => {
+    setName(team.name);
+    setAgeGroup(team.ageGroup || "");
+    setIcon(team.icon || "");
+    setColor(team.color);
+    lastGoodColor.current = team.color;
+    setActive(team.active);
+  }, [
+    team.id,
+    team.name,
+    team.ageGroup,
+    team.icon,
+    team.color,
+    team.active,
+  ]);
 
   const hasChanges =
     name !== team.name ||
+    ageGroup !== (team.ageGroup || "") ||
     icon !== (team.icon || "") ||
     color !== team.color ||
     active !== team.active;
@@ -785,6 +940,11 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
       toast.error("Team name is required");
       return;
     }
+    const parsedColor = parseHexOrNull(color);
+    if (!parsedColor) {
+      toast.error("Color must be a valid hex value like #3b82f6");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/teams/${team.id}`, {
@@ -792,8 +952,9 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          ageGroup: ageGroup.trim() || null,
           icon: icon || null,
-          color,
+          color: parsedColor,
           active,
         }),
       });
@@ -802,6 +963,8 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
         throw new Error(body.error || "Failed to update team");
       }
       toast.success("Team settings saved");
+      lastGoodColor.current = parsedColor;
+      setColor(parsedColor);
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -810,11 +973,29 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
     }
   }
 
+  function onColorPickerChange(hex: string) {
+    setColor(hex.toLowerCase());
+    lastGoodColor.current = hex.toLowerCase();
+  }
+
+  function onColorHexBlur() {
+    const parsed = parseHexOrNull(color);
+    if (parsed) {
+      setColor(parsed);
+      lastGoodColor.current = parsed;
+    } else {
+      toast.error("Invalid hex — use #RRGGBB");
+      setColor(lastGoodColor.current);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-base font-bold tracking-tight">Team Profile</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">Manage team name, icon, color, and coaching staff</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Manage team name, age group, icon, color, and visibility
+        </p>
       </div>
 
       <Card className="rounded-2xl border-border/50">
@@ -832,73 +1013,104 @@ function TeamProfileSettings({ team, canManage }: { team: TeamInfo; canManage: b
             />
           </div>
 
+          <div className="grid gap-2">
+            <Label htmlFor="team-age-group">Age Group</Label>
+            <Input
+              id="team-age-group"
+              value={ageGroup}
+              onChange={(e) => setAgeGroup(e.target.value)}
+              disabled={!canManage}
+              className="h-11 rounded-xl"
+              placeholder="e.g. 12U, 14U, Varsity"
+            />
+          </div>
+
           {/* Icon + Color row */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label>Icon</Label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => canManage && setShowIconPicker(!showIconPicker)}
+              <Popover open={iconOpen} onOpenChange={setIconOpen}>
+                <PopoverTrigger
                   disabled={!canManage}
-                  className={cn(
-                    "h-11 w-full rounded-xl border border-input bg-background px-3 text-left flex items-center gap-2 hover:bg-accent/50 transition-colors",
-                    !canManage && "opacity-60 cursor-not-allowed"
-                  )}
+                  render={
+                    <button
+                      type="button"
+                      className={cn(
+                        "h-11 w-full rounded-xl border border-input bg-background px-3 text-left flex items-center gap-2 hover:bg-accent/50 transition-colors",
+                        !canManage && "opacity-60 cursor-not-allowed"
+                      )}
+                    />
+                  }
                 >
                   {icon ? (
-                    <span className="text-xl">{icon}</span>
+                    <span className="text-2xl leading-none">{icon}</span>
                   ) : (
-                    <span className="text-sm text-muted-foreground">Choose icon…</span>
+                    <span className="text-sm text-muted-foreground">
+                      Choose icon…
+                    </span>
                   )}
-                </button>
-                {showIconPicker && (
-                  <div className="absolute z-20 top-12 left-0 bg-popover border border-border rounded-xl shadow-lg p-3 w-72">
-                    <div className="flex flex-wrap gap-1.5">
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-3" align="start">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Pick an icon
+                  </p>
+                  <div className="max-h-72 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-6 gap-2">
                       {icon && (
                         <button
                           type="button"
-                          className="h-9 w-9 rounded-lg border border-dashed border-border flex items-center justify-center text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
-                          onClick={() => { setIcon(""); setShowIconPicker(false); }}
+                          className="h-11 w-11 rounded-xl border border-dashed border-border flex items-center justify-center text-muted-foreground hover:bg-accent/50 transition-colors"
+                          onClick={() => {
+                            setIcon("");
+                            setIconOpen(false);
+                          }}
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X className="h-4 w-4" />
                         </button>
                       )}
-                      {TEAM_ICONS.map((emoji) => (
+                      {TEAM_ICONS.map((emoji, i) => (
                         <button
-                          key={emoji}
+                          key={`${emoji}-${i}`}
                           type="button"
                           className={cn(
-                            "h-9 w-9 rounded-lg flex items-center justify-center text-lg hover:bg-accent transition-colors",
+                            "h-11 w-11 rounded-xl flex items-center justify-center text-2xl hover:bg-accent transition-colors",
                             icon === emoji && "ring-2 ring-primary bg-accent"
                           )}
-                          onClick={() => { setIcon(emoji); setShowIconPicker(false); }}
+                          onClick={() => {
+                            setIcon(emoji);
+                            setIconOpen(false);
+                          }}
                         >
                           {emoji}
                         </button>
                       ))}
                     </div>
                   </div>
-                )}
-              </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="grid gap-2">
-              <Label>Color</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {TEAM_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    disabled={!canManage}
-                    className={cn(
-                      "h-7 w-7 rounded-full border-2 transition-all",
-                      color === c ? "border-foreground scale-110 shadow-md" : "border-transparent hover:scale-105"
-                    )}
-                    style={{ backgroundColor: c }}
-                    onClick={() => setColor(c)}
-                  />
-                ))}
+              <Label htmlFor="team-color-hex">Color</Label>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="color"
+                  id="team-color-picker"
+                  className="h-11 w-14 cursor-pointer rounded-xl border border-input bg-background p-1 shrink-0"
+                  value={hexForColorInput(color)}
+                  disabled={!canManage}
+                  onChange={(e) => onColorPickerChange(e.target.value)}
+                />
+                <Input
+                  id="team-color-hex"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  onBlur={onColorHexBlur}
+                  disabled={!canManage}
+                  className="h-11 rounded-xl flex-1 min-w-[8rem] font-mono text-sm"
+                  placeholder="#3b82f6"
+                  spellCheck={false}
+                />
               </div>
             </div>
           </div>

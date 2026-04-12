@@ -22,6 +22,16 @@ enum TeamRole {
   TEAM_MANAGER
 }
 
+enum ScheduleEventAuditAction {
+  CREATE
+  UPDATE
+  REMOVE
+  DELETE
+  SERIES_CANCEL
+  BUMP_PENDING
+  TEAM_TRANSFER
+}
+
 enum EventType {
   GAME
   PRACTICE
@@ -94,6 +104,22 @@ enum NotificationStatus {
   FAILED
 }
 
+enum NotifyTrigger {
+  EVENT_ADDED
+  EVENT_CANCELLED
+  EVENT_TIME_CHANGED
+  JOB_SIGNUP_CANCELLED
+  CLUB_EVENT_CHANGED
+  SLOT_REQUEST
+  UNFILLED_JOBS_24H
+}
+
+enum NotifScope {
+  ALL_EVENTS
+  MY_TEAMS
+  SPECIFIC_TEAM
+}
+
 model Organization {
   id                     String   @id @default(cuid())
   name                   String
@@ -104,18 +130,22 @@ model Organization {
   themeMode              String   @default("light")
   smsEnabled             Boolean  @default(true)
   reminderHoursBefore    String   @default("24,2")
+  /// Incremented when admins upload a custom PWA/header icon; 0 = use static defaults.
+  brandingIconVersion    Int      @default(0)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  users            User[]
-  facilities       Facility[]
-  teams            Team[]
-  seasons          Season[]
-  jobTemplates     JobTemplate[]
-  volunteerParents VolunteerParent[]
-  invitations      Invitation[]
-  blackoutDates    BlackoutDate[]
-  schedulingRules  SchedulingRule[]
+  users                     User[]
+  facilities                Facility[]
+  teams                     Team[]
+  seasons                   Season[]
+  jobTemplates              JobTemplate[]
+  volunteerParents          VolunteerParent[]
+  invitations               Invitation[]
+  blackoutDates             BlackoutDate[]
+  schedulingRules           SchedulingRule[]
+  notificationSubscriptions NotificationSubscription[]
+  scheduleEventAuditLogs    ScheduleEventAuditLog[]
 }
 
 model User {
@@ -138,6 +168,7 @@ model User {
   slotRequestsMade          SlotRequest[]           @relation("SlotRequestsMade")
   slotRequestsResponded     SlotRequest[]           @relation("SlotRequestsResponded")
   adminNotificationPrefs    AdminNotificationPref[]
+  notificationSubscriptions NotificationSubscription[]
 
   @@index([organizationId])
   @@index([email])
@@ -195,6 +226,7 @@ model Invitation {
 model Facility {
   id             String   @id @default(cuid())
   name           String
+  color          String   @default("#64748b")
   address        String?
   googleMapsUrl  String?
   notes          String?
@@ -239,15 +271,17 @@ model Team {
 
   organization      Organization        @relation(fields: [organizationId], references: [id])
   headCoach         User?               @relation("HeadCoach", fields: [headCoachId], references: [id])
-  scheduleEvents    ScheduleEvent[]
-  seasonTeams       SeasonTeam[]
+  scheduleEvents         ScheduleEvent[]
+  scheduleEventTagLinks  ScheduleEventTaggedTeam[]
+  seasonTeams            SeasonTeam[]
   members           TeamMember[]
   invitations       Invitation[]
   slotRequests      SlotRequest[]       @relation("SlotRequestsRequesting")
-  jobOverrides      TeamJobOverride[]
-  teamJobTemplates  JobTemplate[]       @relation("TeamJobTemplates")
-  players           Player[]
-  schedulingRules   SchedulingRule[]
+  jobOverrides              TeamJobOverride[]
+  teamJobTemplates          JobTemplate[]       @relation("TeamJobTemplates")
+  players                   Player[]
+  schedulingRules           SchedulingRule[]
+  notificationSubscriptions NotificationSubscription[]
 
   @@index([organizationId])
 }
@@ -329,6 +363,8 @@ model ScheduleEvent {
   gameVenue         String?
   noJobs            Boolean       @default(false)
   cancelledByBumpId String?
+  cancelledAt       DateTime?
+  cancelledBy       String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -338,12 +374,49 @@ model ScheduleEvent {
   gameJobs       GameJob[]
   volunteerSlots VolunteerSlot[]
   slotRequests   SlotRequest[]
+  taggedTeams    ScheduleEventTaggedTeam[]
 
   @@index([teamId])
   @@index([subFacilityId])
   @@index([startTime])
   @@index([seasonId])
   @@index([recurrenceGroupId])
+  @@index([cancelledAt])
+}
+
+/// Append-only log of schedule event creates, edits, cancellations, deletes, and transfers.
+/// Rows older than 90 days are purged daily (see purgeExpiredScheduleEventAuditLogs / pg-boss).
+model ScheduleEventAuditLog {
+  id                String                   @id @default(cuid())
+  createdAt         DateTime                 @default(now())
+  organizationId    String
+  scheduleEventId   String?
+  recurrenceGroupId String?
+  action            ScheduleEventAuditAction
+  actorUserId       String?
+  actorLabel        String
+  summary           String?
+  before            Json?
+  after             Json?
+  meta              Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([scheduleEventId])
+}
+
+model ScheduleEventTaggedTeam {
+  id              String   @id @default(cuid())
+  scheduleEventId String
+  teamId          String
+  createdAt       DateTime @default(now())
+
+  scheduleEvent ScheduleEvent @relation(fields: [scheduleEventId], references: [id], onDelete: Cascade)
+  team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleEventId, teamId])
+  @@index([teamId])
 }
 
 model JobTemplate {
@@ -419,10 +492,11 @@ model JobAssignment {
   playerName        String?
   comfortLevel      String?
   playerVolunteerId String?
-  hoursEarned       Float?
-  cancelToken       String   @unique @default(cuid())
-  cancelledAt       DateTime?
-  createdAt         DateTime @default(now())
+  hoursEarned         Float?
+  reminderHoursBefore Int?
+  cancelToken         String   @unique @default(cuid())
+  cancelledAt         DateTime?
+  createdAt           DateTime @default(now())
 
   gameJob         GameJob          @relation(fields: [gameJobId], references: [id], onDelete: Cascade)
   user            User?            @relation(fields: [userId], references: [id])
@@ -618,4 +692,26 @@ model SchedulingRule {
   @@index([organizationId])
   @@index([teamId])
   @@index([dayOfWeek])
+}
+
+model NotificationSubscription {
+  id              String              @id @default(cuid())
+  organizationId  String
+  trigger         NotifyTrigger
+  channel         NotificationChannel
+  scope           NotifScope          @default(MY_TEAMS)
+  recipientEmail  String?
+  recipientPhone  String?
+  userId          String?
+  teamId          String?
+  enabled         Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, trigger])
+  @@index([userId])
 }

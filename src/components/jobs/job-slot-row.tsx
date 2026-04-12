@@ -8,6 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Globe,
   Lock,
   Plus,
@@ -53,8 +61,68 @@ export function JobSlotRow({ job, canManage, onToggle, onChanged }: JobSlotRowPr
   const [copied, setCopied] = useState(false);
   const [slots, setSlots] = useState(job.slotsNeeded);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(job.name);
+  const [editDescription, setEditDescription] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editIsPublic, setEditIsPublic] = useState(job.isPublic);
+  const [editHours, setEditHours] = useState<string>("");
   const router = useRouter();
   const hasOpen = !isDisabled && job.filled < slots;
+
+  function openEdit() {
+    setEditName(job.name);
+    setEditIsPublic(job.isPublic);
+    setEditDescription("");
+    setEditHours("");
+    setEditing(true);
+  }
+
+  async function handleSaveEdit() {
+    setEditSaving(true);
+    try {
+      const hours = editHours.trim() ? Number(editHours) : null;
+      const res = await fetch(`/api/jobs/${job.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          overrideName: editName.trim() || null,
+          overrideDescription: editDescription.trim() || null,
+          isPublic: editIsPublic,
+          overrideHoursPerGame: editHours.trim() ? (Number.isFinite(hours) ? hours : null) : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Failed to update job");
+      }
+      toast.success("Job updated");
+      setEditing(false);
+      onChanged?.();
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update job");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function handleRemoveJob() {
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to remove job");
+      toast.success("Job removed");
+      setEditing(false);
+      onChanged?.();
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove job");
+    } finally {
+      setEditSaving(false);
+    }
+  }
 
   async function handleToggle(checked: boolean) {
     const newDisabled = !checked;
@@ -240,6 +308,14 @@ export function JobSlotRow({ job, canManage, onToggle, onChanged }: JobSlotRowPr
               Assign
             </button>
           )}
+          {canManage && (
+            <button
+              onClick={openEdit}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-medium"
+            >
+              Edit
+            </button>
+          )}
           {job.isPublic && (
             <button
               onClick={copyShareLink}
@@ -251,6 +327,65 @@ export function JobSlotRow({ job, canManage, onToggle, onChanged }: JobSlotRowPr
           )}
         </div>
       )}
+
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit job</DialogTitle>
+            <DialogDescription>Update details or remove this job.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium">Name</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium">Description</label>
+              <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium">Hours (per slot)</label>
+                <Input
+                  type="number"
+                  step="0.25"
+                  min={0}
+                  placeholder="Leave blank to keep"
+                  value={editHours}
+                  onChange={(e) => setEditHours(e.target.value)}
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="grid gap-1">
+                  <label className="text-xs font-medium">Public signup</label>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={editIsPublic} onCheckedChange={(v) => setEditIsPublic(v)} />
+                    <span className="text-xs text-muted-foreground">{editIsPublic ? "On" : "Off"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row sm:justify-between gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleRemoveJob}
+              disabled={editSaving}
+            >
+              Remove job
+            </Button>
+            <div className="flex gap-2 justify-end">
+              <Button type="button" variant="outline" onClick={() => setEditing(false)} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleSaveEdit} disabled={editSaving || !editName.trim()}>
+                {editSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {!isDisabled && showForm && (
         <div className="mt-2 flex flex-col sm:flex-row gap-2">

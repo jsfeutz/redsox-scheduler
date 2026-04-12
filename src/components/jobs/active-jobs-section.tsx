@@ -66,6 +66,7 @@ interface EventWithJobs {
   endTime: string;
   teamId: string;
   team: { id: string; name: string; color: string };
+  taggedTeamIds?: string[];
   gameJobs: GameJobWithDetails[];
   seasonId?: string | null;
 }
@@ -110,7 +111,10 @@ export function ActiveJobsSection({
   const router = useRouter();
 
   const filteredEvents = events.filter((event) => {
-    if (teamFilter !== "all" && event.teamId !== teamFilter) return false;
+    if (teamFilter !== "all") {
+      const tagMatch = event.taggedTeamIds?.includes(teamFilter);
+      if (event.teamId !== teamFilter && !tagMatch) return false;
+    }
     if (seasonFilter !== "all" && event.seasonId !== seasonFilter) return false;
     return true;
   });

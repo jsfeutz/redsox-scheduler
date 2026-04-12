@@ -9,6 +9,9 @@ import {
 import { sendInvitation } from "@/lib/email";
 import { TeamRole } from "@prisma/client";
 
+/** How long invite links remain valid. */
+const INVITATION_EXPIRES_AFTER_DAYS = 120;
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) {
@@ -115,7 +118,7 @@ export async function POST(req: Request) {
   }
 
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+  expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRES_AFTER_DAYS);
 
   let replacingName: string | null = null;
 

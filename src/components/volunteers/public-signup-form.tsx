@@ -61,7 +61,7 @@ export function PublicSignupForm({
 
   if (success) {
     return (
-      <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-400">
+      <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-base text-emerald-400">
         <CheckCircle2 className="h-5 w-5 shrink-0" />
         <span>
           Signed up for <strong>{slotName}</strong>. Thank you!
@@ -73,7 +73,7 @@ export function PublicSignupForm({
   return (
     <form onSubmit={handleSubmit} className="grid gap-3">
       <div className="grid gap-1.5">
-        <Label htmlFor={`name-${slotId}`} className="text-sm font-medium">
+        <Label htmlFor={`name-${slotId}`} className="text-base font-medium">
           Your Name
         </Label>
         <Input
@@ -86,7 +86,7 @@ export function PublicSignupForm({
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor={`email-${slotId}`} className="text-sm font-medium">
+        <Label htmlFor={`email-${slotId}`} className="text-base font-medium">
           Email
         </Label>
         <Input
@@ -100,7 +100,7 @@ export function PublicSignupForm({
         />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor={`phone-${slotId}`} className="text-sm font-medium">
+        <Label htmlFor={`phone-${slotId}`} className="text-base font-medium">
           Phone <span className="text-muted-foreground font-normal">(optional)</span>
         </Label>
         <Input
@@ -111,7 +111,7 @@ export function PublicSignupForm({
           onChange={(e) => setPhone(e.target.value)}
           className="h-12 rounded-xl text-base"
         />
-        <p className="text-xs text-muted-foreground leading-relaxed">
+        <p className="text-sm text-muted-foreground leading-relaxed">
           By providing your phone number, you consent to receive SMS notifications about your volunteer shift
           (confirmations, reminders, and changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
           Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>

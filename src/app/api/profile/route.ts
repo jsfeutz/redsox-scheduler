@@ -3,40 +3,43 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import {
-  AdminNotifyChannel,
-  AdminNotifyEvent,
-  UserRole,
+  NotifyTrigger,
+  NotificationChannel,
+  NotifScope,
 } from "@prisma/client";
 
-const NOTIFY_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.SCHEDULE_MANAGER];
-
-const VALID_EVENTS = new Set<string>(Object.values(AdminNotifyEvent));
-const VALID_CHANNELS = new Set<string>(Object.values(AdminNotifyChannel));
-
-function canManageNotificationPrefs(role: UserRole) {
-  return NOTIFY_ROLES.includes(role);
-}
+const VALID_TRIGGERS = new Set<string>(Object.values(NotifyTrigger));
+const VALID_NOTIF_CHANNELS = new Set<string>(Object.values(NotificationChannel));
+const VALID_SCOPES = new Set<string>(Object.values(NotifScope));
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      phone: true,
-      smsEnabled: true,
-      adminNotificationPrefs: canManageNotificationPrefs(user.role as UserRole)
-        ? { select: { event: true, channel: true, enabled: true } }
-        : false,
-    },
-  });
+  const [dbUser, teams] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        phone: true,
+        smsEnabled: true,
+        notificationSubscriptions: {
+          where: { userId: user.id },
+          select: { trigger: true, channel: true, enabled: true, scope: true, teamId: true },
+        },
+      },
+    }),
+    prisma.team.findMany({
+      where: { organizationId: user.organizationId },
+      select: { id: true, name: true, color: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
-  return NextResponse.json(dbUser);
+  return NextResponse.json({ ...dbUser, teams });
 }
 
 export async function PATCH(req: Request) {
@@ -44,8 +47,7 @@ export async function PATCH(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { name, email, phone, smsEnabled, currentPassword, newPassword, notificationPrefs } =
-    body;
+  const { name, email, phone, smsEnabled, currentPassword, newPassword, eventNotificationPrefs } = body;
 
   const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
   if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -77,75 +79,83 @@ export async function PATCH(req: Request) {
   if (smsEnabled !== undefined) data.smsEnabled = Boolean(smsEnabled);
   if (newPassword) data.passwordHash = await bcrypt.hash(newPassword, 12);
 
-  const hasPrefs =
-    Array.isArray(notificationPrefs) && canManageNotificationPrefs(dbUser.role);
-
-  if (hasPrefs) {
-    for (const row of notificationPrefs as {
-      event?: string;
+  const hasEventPrefs = Array.isArray(eventNotificationPrefs);
+  if (hasEventPrefs) {
+    for (const row of eventNotificationPrefs as {
+      trigger?: string;
       channel?: string;
       enabled?: boolean;
+      scope?: string;
+      teamId?: string | null;
     }[]) {
-      if (!row?.event || !VALID_EVENTS.has(row.event)) continue;
-      const ch = row.channel && VALID_CHANNELS.has(row.channel) ? row.channel : "EMAIL";
-      await prisma.adminNotificationPref.upsert({
-        where: {
-          userId_event: {
-            userId: user.id,
-            event: row.event as AdminNotifyEvent,
-          },
-        },
-        create: {
-          userId: user.id,
-          event: row.event as AdminNotifyEvent,
-          channel: ch as AdminNotifyChannel,
-          enabled: Boolean(row.enabled),
-        },
-        update: {
-          channel: ch as AdminNotifyChannel,
-          enabled: Boolean(row.enabled),
-        },
+      if (!row?.trigger || !VALID_TRIGGERS.has(row.trigger)) continue;
+      const enabled = Boolean(row.enabled);
+      const scope = row.scope && VALID_SCOPES.has(row.scope)
+        ? (row.scope as NotifScope)
+        : NotifScope.MY_TEAMS;
+      const teamId = scope === NotifScope.SPECIFIC_TEAM && row.teamId ? row.teamId : null;
+      const trigger = row.trigger as NotifyTrigger;
+
+      const isBoth = row.channel === "BOTH";
+      const channels: NotificationChannel[] = isBoth
+        ? [NotificationChannel.EMAIL, NotificationChannel.SMS]
+        : [row.channel === "SMS" ? NotificationChannel.SMS : NotificationChannel.EMAIL];
+
+      const existing = await prisma.notificationSubscription.findMany({
+        where: { userId: user.id, trigger, organizationId: user.organizationId },
+        select: { id: true, channel: true },
       });
+
+      const existingByChannel = new Map(existing.map((e) => [e.channel, e.id]));
+
+      for (const ch of channels) {
+        const existingId = existingByChannel.get(ch);
+        if (existingId) {
+          await prisma.notificationSubscription.update({
+            where: { id: existingId },
+            data: { enabled, scope, teamId },
+          });
+        } else {
+          await prisma.notificationSubscription.create({
+            data: {
+              userId: user.id,
+              organizationId: user.organizationId,
+              trigger,
+              channel: ch,
+              enabled,
+              scope,
+              teamId,
+            },
+          });
+        }
+        existingByChannel.delete(ch);
+      }
+
+      for (const [, obsoleteId] of existingByChannel) {
+        await prisma.notificationSubscription.update({
+          where: { id: obsoleteId },
+          data: { enabled: false },
+        });
+      }
     }
   }
 
-  if (Object.keys(data).length === 0 && !hasPrefs) {
+  if (Object.keys(data).length === 0 && !hasEventPrefs) {
     return NextResponse.json({ error: "No changes provided" }, { status: 400 });
   }
 
-  let updated;
-  if (Object.keys(data).length > 0) {
-    updated = await prisma.user.update({
-      where: { id: user.id },
-      data,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        phone: true,
-        smsEnabled: true,
-        adminNotificationPrefs: canManageNotificationPrefs(user.role as UserRole)
-          ? { select: { event: true, channel: true, enabled: true } }
-          : false,
-      },
-    });
-  } else {
-    updated = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        phone: true,
-        smsEnabled: true,
-        adminNotificationPrefs: canManageNotificationPrefs(user.role as UserRole)
-          ? { select: { event: true, channel: true, enabled: true } }
-          : false,
-      },
-    });
-  }
+  const select = {
+    id: true,
+    email: true,
+    name: true,
+    role: true,
+    phone: true,
+    smsEnabled: true,
+  };
+
+  const updated = Object.keys(data).length > 0
+    ? await prisma.user.update({ where: { id: user.id }, data, select })
+    : await prisma.user.findUnique({ where: { id: user.id }, select });
 
   return NextResponse.json(updated);
 }

@@ -13,7 +13,6 @@ import {
   MapPin,
   ChevronLeft,
   ChevronRight,
-  Check,
   ClipboardList,
   Loader2,
   Mail,
@@ -46,6 +45,7 @@ import { toast } from "sonner";
 import { HelpWantedJobCard } from "./help-wanted-job-card";
 import { PublicJobSignup } from "@/components/jobs/public-job-signup";
 import { useVolunteerIdentity } from "@/components/providers/volunteer-identity";
+import { Switch } from "@/components/ui/switch";
 
 const JOBS_PER_PAGE = 10;
 
@@ -53,12 +53,16 @@ export interface JobData {
   id: string;
   templateName: string;
   templateDescription: string | null;
+  isOrgJob?: boolean;
+  orgLabel?: string | null;
   eventId: string;
   eventTitle: string;
   eventType: string;
   startTime: string;
   endTime: string;
   teamId: string;
+  /** Same-org teams also linked to this event (show when filtering by that team). */
+  taggedTeamIds: string[];
   teamName: string;
   teamColor: string;
   facilityId: string;
@@ -102,6 +106,7 @@ export function HelpWantedBoard({
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showOrgJobs, setShowOrgJobs] = useState(true);
   const [viewMode, setViewMode] = useState<"cards" | "table">(compact ? "cards" : "table");
   const [page, setPage] = useState(() => {
     if (highlightJobId) {
@@ -133,7 +138,6 @@ export function HelpWantedBoard({
     dateTo;
 
   const filteredJobs = useMemo(() => {
-    setPage(1);
     return jobs.filter((job) => {
       if (search) {
         const q = search.toLowerCase();
@@ -141,29 +145,43 @@ export function HelpWantedBoard({
           job.templateName.toLowerCase().includes(q) ||
           job.eventTitle.toLowerCase().includes(q) ||
           job.teamName.toLowerCase().includes(q) ||
-          job.facilityName.toLowerCase().includes(q);
+          job.facilityName.toLowerCase().includes(q) ||
+          (job.orgLabel ? job.orgLabel.toLowerCase().includes(q) : false);
         if (!match) return false;
       }
 
-      if (selectedTeams.size > 0 && !selectedTeams.has(job.teamId)) return false;
+      if (selectedTeams.size > 0) {
+        const primary = job.teamId && selectedTeams.has(job.teamId);
+        const tagged = job.taggedTeamIds.some((id) => selectedTeams.has(id));
+        if (!primary && !tagged) return false;
+      }
       if (selectedFacilities.size > 0 && !selectedFacilities.has(job.facilityId)) return false;
       if (selectedJobs.size > 0 && !selectedJobs.has(job.templateName)) return false;
 
-      if (dateFrom) {
-        const from = startOfDay(parseISO(dateFrom));
-        if (isBefore(parseISO(job.startTime), from)) return false;
-      }
-      if (dateTo) {
-        const to = endOfDay(parseISO(dateTo));
-        if (isAfter(parseISO(job.startTime), to)) return false;
+      // Date filters apply to event-tied jobs only.
+      if (!job.isOrgJob) {
+        if (dateFrom) {
+          const from = startOfDay(parseISO(dateFrom));
+          if (isBefore(parseISO(job.startTime), from)) return false;
+        }
+        if (dateTo) {
+          const to = endOfDay(parseISO(dateTo));
+          if (isAfter(parseISO(job.startTime), to)) return false;
+        }
       }
 
       return true;
     });
   }, [jobs, search, selectedTeams, selectedFacilities, selectedJobs, dateFrom, dateTo]);
 
+  const orgJobs = useMemo(
+    () => (showOrgJobs ? filteredJobs.filter((j) => j.isOrgJob) : []),
+    [filteredJobs, showOrgJobs]
+  );
+  const datedJobs = useMemo(() => filteredJobs.filter((j) => !j.isOrgJob), [filteredJobs]);
+
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / JOBS_PER_PAGE));
-  const paginatedJobs = filteredJobs.slice(
+  const paginatedJobs = datedJobs.slice(
     (page - 1) * JOBS_PER_PAGE,
     page * JOBS_PER_PAGE
   );
@@ -184,6 +202,7 @@ export function HelpWantedBoard({
     setSelectedJobs(new Set());
     setDateFrom("");
     setDateTo("");
+    setPage(1);
   }
 
 
@@ -244,17 +263,17 @@ export function HelpWantedBoard({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">From</label>
-          <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v)} placeholder="Start" className="h-10 rounded-xl text-sm" />
+          <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">From</label>
+          <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v)} placeholder="Start" className="h-10 rounded-xl text-base" />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">To</label>
-          <DatePicker value={dateTo} onChange={(v) => setDateTo(v)} placeholder="End" className="h-10 rounded-xl text-sm" />
+          <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">To</label>
+          <DatePicker value={dateTo} onChange={(v) => setDateTo(v)} placeholder="End" className="h-10 rounded-xl text-base" />
         </div>
       </div>
 
       {hasActiveFilters && (
-        <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-xs mt-1">
+        <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full text-sm mt-1">
           Clear all filters
         </Button>
       )}
@@ -270,8 +289,8 @@ export function HelpWantedBoard({
           <Input
             placeholder="Search jobs, teams..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={cn("pl-10 rounded-xl text-sm", compact ? "h-9" : "h-10")}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className={cn("pl-10 rounded-xl text-base", compact ? "h-9" : "h-10")}
           />
           {search && (
             <button
@@ -289,7 +308,7 @@ export function HelpWantedBoard({
           >
             <SlidersHorizontal className="h-4 w-4" />
             {filterCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center font-bold">
+              <span className="absolute -top-1 -right-1 min-h-[1.125rem] min-w-[1.125rem] h-5 w-5 rounded-full bg-primary text-xs text-primary-foreground flex items-center justify-center font-bold px-0.5">
                 {filterCount}
               </span>
             )}
@@ -332,7 +351,7 @@ export function HelpWantedBoard({
 
       {/* Desktop inline filters */}
       <div className="hidden sm:flex items-center gap-2 flex-wrap">
-        <Select value={selectedTeams.size === 1 ? [...selectedTeams][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedTeams(new Set<string>()); else setSelectedTeams(new Set<string>([v])); }}>
+        <Select value={selectedTeams.size === 1 ? [...selectedTeams][0] ?? "ALL" : "ALL"} onValueChange={(v) => { setPage(1); if (!v || v === "ALL") setSelectedTeams(new Set<string>()); else setSelectedTeams(new Set<string>([v])); }}>
           <SelectTrigger className="h-9 w-[150px] rounded-lg text-sm">
             <SelectValue placeholder="All Teams" />
           </SelectTrigger>
@@ -348,7 +367,7 @@ export function HelpWantedBoard({
             ))}
           </SelectContent>
         </Select>
-        <Select value={selectedJobs.size === 1 ? [...selectedJobs][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedJobs(new Set<string>()); else setSelectedJobs(new Set<string>([v])); }}>
+        <Select value={selectedJobs.size === 1 ? [...selectedJobs][0] ?? "ALL" : "ALL"} onValueChange={(v) => { setPage(1); if (!v || v === "ALL") setSelectedJobs(new Set<string>()); else setSelectedJobs(new Set<string>([v])); }}>
           <SelectTrigger className="h-9 w-[150px] rounded-lg text-sm">
             <SelectValue placeholder="All Jobs" />
           </SelectTrigger>
@@ -359,7 +378,7 @@ export function HelpWantedBoard({
             ))}
           </SelectContent>
         </Select>
-        <Select value={selectedFacilities.size === 1 ? [...selectedFacilities][0] ?? "ALL" : "ALL"} onValueChange={(v) => { if (!v || v === "ALL") setSelectedFacilities(new Set<string>()); else setSelectedFacilities(new Set<string>([v])); }}>
+        <Select value={selectedFacilities.size === 1 ? [...selectedFacilities][0] ?? "ALL" : "ALL"} onValueChange={(v) => { setPage(1); if (!v || v === "ALL") setSelectedFacilities(new Set<string>()); else setSelectedFacilities(new Set<string>([v])); }}>
           <SelectTrigger className="h-9 w-[150px] rounded-lg text-sm">
             <SelectValue placeholder="All Facilities" />
           </SelectTrigger>
@@ -370,14 +389,18 @@ export function HelpWantedBoard({
             ))}
           </SelectContent>
         </Select>
-        <DatePicker value={dateFrom} onChange={(v) => setDateFrom(v)} placeholder="From" className="h-9 rounded-lg text-sm w-[140px]" />
-        <DatePicker value={dateTo} onChange={(v) => setDateTo(v)} placeholder="To" className="h-9 rounded-lg text-sm w-[140px]" />
+        <DatePicker value={dateFrom} onChange={(v) => { setDateFrom(v); setPage(1); }} placeholder="From" className="h-9 rounded-lg text-sm w-[140px]" />
+        <DatePicker value={dateTo} onChange={(v) => { setDateTo(v); setPage(1); }} placeholder="To" className="h-9 rounded-lg text-sm w-[140px]" />
+        <div className="flex items-center gap-2 rounded-lg border border-border/50 px-3 h-9 bg-card/30">
+          <Switch checked={showOrgJobs} onCheckedChange={setShowOrgJobs} className="scale-75" />
+          <span className="text-sm text-muted-foreground">Org jobs</span>
+        </div>
         {hasActiveFilters && (
           <>
-            <Badge variant="secondary" className="rounded-lg text-xs h-9 px-3">
+            <Badge variant="secondary" className="rounded-lg text-sm h-9 px-3">
               {filteredJobs.length} result{filteredJobs.length !== 1 ? "s" : ""}
             </Badge>
-            <button onClick={clearFilters} className="text-xs text-primary hover:underline font-medium">
+            <button onClick={clearFilters} className="text-sm text-primary hover:underline font-medium">
               Clear
             </button>
           </>
@@ -387,15 +410,21 @@ export function HelpWantedBoard({
       {/* Mobile active filters summary */}
       {hasActiveFilters && (
         <div className="sm:hidden flex items-center gap-2">
-          <Badge variant="secondary" className="rounded-lg text-xs">
+          <Badge variant="secondary" className="rounded-lg text-sm">
             {filteredJobs.length} result{filteredJobs.length !== 1 ? "s" : ""}
             {filterCount > 0 && ` · ${filterCount} filter${filterCount !== 1 ? "s" : ""}`}
           </Badge>
-          <button onClick={clearFilters} className="text-xs text-primary hover:underline font-medium">
+          <button onClick={clearFilters} className="text-sm text-primary hover:underline font-medium">
             Clear
           </button>
         </div>
       )}
+
+      {/* Mobile org toggle */}
+      <div className="sm:hidden flex items-center justify-between rounded-xl border border-border/50 bg-card/30 px-3 py-2">
+        <span className="text-sm text-muted-foreground font-medium">Show org jobs</span>
+        <Switch checked={showOrgJobs} onCheckedChange={setShowOrgJobs} />
+      </div>
 
       {/* My Signups quick lookup - only for public (non-compact) mode */}
       {!compact && <MySignupsLookup />}
@@ -427,13 +456,13 @@ export function HelpWantedBoard({
       ) : viewMode === "table" ? (
         <TableView jobs={paginatedJobs} highlightedId={highlightedId} highlightJobId={highlightJobId} highlightRef={highlightRef} />
       ) : (
-        <CardView jobsByDate={jobsByDate} compact={compact} highlightJobId={highlightJobId} />
+        <CardView jobsByDate={jobsByDate} orgJobs={orgJobs} compact={compact} highlightJobId={highlightJobId} />
       )}
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between pt-2 pb-2">
-          <p className="text-xs md:text-sm text-muted-foreground">
+          <p className="text-sm md:text-base text-muted-foreground">
             {(page - 1) * JOBS_PER_PAGE + 1}–
             {Math.min(page * JOBS_PER_PAGE, filteredJobs.length)} of{" "}
             {filteredJobs.length}
@@ -456,13 +485,13 @@ export function HelpWantedBoard({
               .map((p, i, arr) => (
                 <span key={p} className="contents">
                   {i > 0 && arr[i - 1] !== p - 1 && (
-                    <span className="text-xs text-muted-foreground px-0.5">...</span>
+                    <span className="text-sm text-muted-foreground px-0.5">...</span>
                   )}
                   <Button
                     variant={p === page ? "default" : "outline"}
                     size="icon"
                     className={cn(
-                      "h-8 w-8 md:h-9 md:w-9 rounded-lg text-xs md:text-sm",
+                      "h-8 w-8 md:h-9 md:w-9 rounded-lg text-sm md:text-base",
                       p === page && "bg-primary text-primary-foreground"
                     )}
                     onClick={() => setPage(p)}
@@ -544,7 +573,7 @@ function MySignupsLookup() {
         <Mail className="h-5 w-5 text-emerald-500 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">Check your email!</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             We sent a link to view and manage your signups.
           </p>
         </div>
@@ -582,7 +611,7 @@ function MySignupsLookup() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
-        className="h-10 rounded-lg text-sm flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-2"
+        className="h-10 rounded-lg text-base flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 px-2"
         autoFocus
       />
       <Button
@@ -612,15 +641,54 @@ function MySignupsLookup() {
 
 function CardView({
   jobsByDate,
+  orgJobs,
   compact = false,
   highlightJobId,
 }: {
   jobsByDate: Record<string, JobData[]>;
+  orgJobs: JobData[];
   compact?: boolean;
   highlightJobId?: string | null;
 }) {
   return (
     <div className={cn("space-y-6", compact && "space-y-4")}>
+      {orgJobs.length > 0 && (
+        <section>
+          <div className={cn("mb-2 md:mb-3 flex items-center gap-2 px-1", compact && "sticky top-0 bg-background/95 backdrop-blur-sm py-1 z-10")}>
+            <div className="h-2 w-2 rounded-full bg-muted-foreground/50 shrink-0" />
+            <h2 className="text-sm md:text-base font-bold uppercase tracking-wider text-muted-foreground">
+              Organization Jobs
+            </h2>
+          </div>
+          <Card className={cn("rounded-xl md:rounded-2xl border-border/50 overflow-hidden")}>
+            <CardContent className={cn("space-y-2 md:space-y-3", compact ? "p-3 md:p-5" : "p-5")}>
+              {orgJobs.map((job) => (
+                <HelpWantedJobCard
+                  key={job.id}
+                  autoOpen={job.id === highlightJobId}
+                  job={{
+                    id: job.id,
+                    templateName: job.templateName,
+                    templateDescription: job.templateDescription,
+                    eventTitle: job.orgLabel || "Organization",
+                    teamName: "Organization",
+                    teamColor: "#6b7280",
+                    facilityName: "",
+                    subFacilityName: "",
+                    date: "",
+                    time: "",
+                    slotsNeeded: job.slotsNeeded,
+                    assignmentCount: job.assignmentCount,
+                    volunteerNames: job.volunteerNames,
+                    hoursPerGame: job.hoursPerGame,
+                    askComfortLevel: job.askComfortLevel,
+                  }}
+                />
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      )}
       {Object.entries(jobsByDate).map(([dateKey, dateJobs]) => {
         const byEvent = dateJobs.reduce<Record<string, JobData[]>>(
           (acc, job) => {
@@ -635,7 +703,7 @@ function CardView({
           <section key={dateKey}>
             <div className={cn("mb-2 md:mb-3 flex items-center gap-2 px-1", compact && "sticky top-0 bg-background/95 backdrop-blur-sm py-1 z-10")}>
               <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
-              <h2 className="text-xs md:text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              <h2 className="text-sm md:text-base font-bold uppercase tracking-wider text-muted-foreground">
                 {format(parseISO(dateKey), "EEE, MMM d")}
               </h2>
             </div>
@@ -660,7 +728,7 @@ function CardView({
                           </h3>
                           <Badge
                             variant="outline"
-                            className="text-[10px] md:text-xs"
+                            className="text-xs md:text-sm"
                             style={{
                               borderColor: first.teamColor,
                               color: first.teamColor,
@@ -669,15 +737,15 @@ function CardView({
                             {first.teamName}
                           </Badge>
                         </div>
-                        <div className={cn("mt-1.5 md:mt-2 flex flex-wrap gap-x-3 md:gap-x-4 gap-y-1 text-xs md:text-sm text-muted-foreground")}>
+                        <div className={cn("mt-1.5 md:mt-2 flex flex-wrap gap-x-3 md:gap-x-4 gap-y-1 text-sm md:text-base text-muted-foreground")}>
                           <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3 md:h-3.5 md:w-3.5" />
+                            <Clock className="h-4 w-4 md:h-4 md:w-4" />
                             {format(parseISO(first.startTime), "h:mm a")}
                             {" – "}
                             {format(parseISO(first.endTime), "h:mm a")}
                           </span>
                           <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3 md:h-3.5 md:w-3.5" />
+                            <MapPin className="h-4 w-4 md:h-4 md:w-4" />
                             {first.facilityName}
                             {first.subFacilityName && ` – ${first.subFacilityName}`}
                           </span>
@@ -685,7 +753,7 @@ function CardView({
                       </div>
 
                       <div className={cn("space-y-2 md:space-y-3 border-t border-border/50", compact ? "pt-2 md:pt-4" : "pt-4")}>
-                        <p className="text-[10px] md:text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <p className="text-xs md:text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                           Available Jobs
                         </p>
                         {eventJobs.map((job) => (
@@ -695,6 +763,7 @@ function CardView({
                             job={{
                               id: job.id,
                               templateName: job.templateName,
+                              templateDescription: job.templateDescription,
                               eventTitle: job.eventTitle,
                               teamName: job.teamName,
                               teamColor: job.teamColor,
@@ -730,9 +799,9 @@ function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs
     <Card className="rounded-2xl border-border/50">
       {/* Desktop table */}
       <div className="hidden sm:block overflow-visible">
-        <table className="w-full text-sm">
+        <table className="w-full text-base">
           <thead>
-            <tr className="border-b border-border/50 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+            <tr className="border-b border-border/50 text-muted-foreground text-sm font-semibold uppercase tracking-wider">
               <th className="text-left px-4 py-3 whitespace-nowrap">Date</th>
               <th className="text-left px-4 py-3 whitespace-nowrap">Time</th>
               <th className="text-left px-4 py-3">Job</th>
@@ -776,11 +845,16 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
       </td>
       <td className="px-4 py-3">
         <div className="font-medium truncate">{job.templateName}</div>
+        {job.templateDescription && (
+          <div className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
+            {job.templateDescription}
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-muted-foreground truncate">
+          <span className="text-sm text-muted-foreground truncate">
             {job.eventTitle}
           </span>
-          <span className="text-[10px] text-muted-foreground shrink-0">
+          <span className="text-xs text-muted-foreground shrink-0">
             {job.hoursPerGame}h
           </span>
         </div>
@@ -801,7 +875,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
       </td>
       <td className="px-3 py-3">
         <div className="flex flex-col items-center gap-1">
-          <div className="flex items-center gap-1 text-xs font-bold">
+          <div className="flex items-center gap-1 text-sm font-bold">
             <span className={spotsLeft > 0 ? "text-primary" : "text-emerald-500"}>
               {count}
             </span>
@@ -823,7 +897,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
             />
           </div>
           {names.length > 0 && (
-            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 text-center max-w-[120px] truncate">
+            <p className="text-xs text-muted-foreground leading-snug mt-0.5 text-center max-w-[120px] truncate">
               {names.join(", ")}
             </p>
           )}
@@ -834,6 +908,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
           <PublicJobSignup
             jobId={job.id}
             jobName={job.templateName}
+            jobDescription={job.templateDescription ?? null}
             eventTitle={job.eventTitle}
             eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
             eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
@@ -845,7 +920,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
             }}
           />
         ) : (
-          <Badge className="bg-emerald-500/15 text-emerald-500 border-0 rounded-lg text-xs">
+          <Badge className="bg-emerald-500/15 text-emerald-500 border-0 rounded-lg text-sm">
             Full
           </Badge>
         )}
@@ -865,15 +940,20 @@ function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean })
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-sm truncate">{job.templateName}</span>
+            <span className="font-semibold text-base truncate">{job.templateName}</span>
             <Badge
               variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded text-[10px] px-1.5 py-0 shrink-0"
+              className="rounded text-xs md:text-sm px-2 py-0.5 shrink-0"
             >
               {spotsLeft > 0 ? `${spotsLeft} left` : "Full"}
             </Badge>
           </div>
-          <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground">
+          {job.templateDescription && (
+            <div className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
+              {job.templateDescription}
+            </div>
+          )}
+          <div className="flex items-center gap-1 mt-0.5 text-sm text-muted-foreground">
             <span
               className="h-1.5 w-1.5 rounded-full shrink-0"
               style={{ backgroundColor: job.teamColor }}
@@ -882,7 +962,7 @@ function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean })
             <span>&middot;</span>
             <span className="shrink-0">{format(parseISO(job.startTime), "MMM d, h:mm a")}</span>
           </div>
-          <div className="text-[11px] text-muted-foreground truncate">
+          <div className="text-sm text-muted-foreground truncate">
             {job.facilityName} &middot; {job.eventTitle}
           </div>
         </div>
@@ -918,7 +998,7 @@ function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean })
             style={{ width: `${fillPct}%` }}
           />
         </div>
-        <span className="text-[10px] text-muted-foreground font-medium shrink-0">
+        <span className="text-sm text-muted-foreground font-medium shrink-0">
           {count}/{job.slotsNeeded}
         </span>
       </div>

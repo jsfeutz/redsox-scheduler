@@ -38,7 +38,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ConflictDialog, type ConflictData } from "./conflict-dialog";
-import { Plus, Minus, X, ChevronDown } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Plus, Minus, X, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 /** Default new/edit times: 6:00 PM start, 1h 45m duration (7:45 PM end). */
 const DEFAULT_EVENT_START = "18:00";
@@ -195,6 +203,7 @@ interface EventData {
   customLocationUrl?: string | null;
   gameVenue?: string | null;
   noJobs?: boolean;
+  taggedTeams?: { team: { id: string; name: string; color: string } }[];
 }
 
 interface EventFormProps {
@@ -269,6 +278,7 @@ export function EventForm({
   const [jobTemplates, setJobTemplates] = useState<JobTemplateOption[]>([]);
   const [selectedJobs, setSelectedJobs] = useState<Map<string, number>>(new Map());
   const [jobsLoading, setJobsLoading] = useState(false);
+  const [taggedTeamIds, setTaggedTeamIds] = useState<string[]>([]);
   const [durationPreset, setDurationPreset] = useState<DurationPresetKey | null>(
     "105"
   );
@@ -387,9 +397,18 @@ export function EventForm({
       setRecurrenceDays([dayOfWeek]);
       setRecurrenceUntil("");
       setSelectedJobs(new Map());
+      setTaggedTeamIds(
+        event?.taggedTeams?.map((l) => l.team.id).filter(Boolean) ?? []
+      );
       setConflict(null);
     }
   }, [open, event, defaultDateStr, reset, currentSeasonId, fixedTeamId, defaultType]);
+
+  const primaryForTagDedupe = (fixedTeamId?.trim() || selectedTeamId?.trim()) ?? "";
+  useEffect(() => {
+    if (!primaryForTagDedupe) return;
+    setTaggedTeamIds((prev) => prev.filter((id) => id !== primaryForTagDedupe));
+  }, [primaryForTagDedupe]);
 
   function applyDurationPreset(preset: DurationPresetKey) {
     setAllDay(false);
@@ -468,6 +487,13 @@ export function EventForm({
       noJobs: data.noJobs || false,
       force,
     };
+
+    if (!isClubEvent) {
+      const primary = effectiveTeamId ?? "";
+      payload.taggedTeamIds = taggedTeamIds.filter((id) => id && id !== primary);
+    } else {
+      payload.taggedTeamIds = [];
+    }
 
     if (selectedJobs.size > 0 && !payload.noJobs) {
       payload.manualJobs = Array.from(selectedJobs.entries()).map(([templateId, slots]) => ({
@@ -895,49 +921,30 @@ export function EventForm({
             ) : (
               <>
                 {selectedType !== "CLUB_EVENT" && !fixedTeamId && (
-                  <div className="grid gap-2">
-                    <Label>Team</Label>
-                    <Select
-                      value={selectedTeamId || "__none__"}
-                      onValueChange={(v) => {
-                        const val = !v || v === "__none__" ? "" : v;
-                        setSelectedTeamId(val);
-                        setValue("teamId", val);
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        {(() => {
-                          const team = teams.find((t) => t.id === selectedTeamId);
-                          return team ? (
-                            <span className="flex items-center gap-1.5">
-                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: team.color }} />
-                              {team.name}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Select a team</span>
-                          );
-                        })()}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Select a team</SelectItem>
-                        {teams.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-full mr-1.5"
-                              style={{ backgroundColor: t.color }}
-                            />
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors.teamId && (
-                      <p className="text-xs text-destructive">
-                        {errors.teamId.message}
-                      </p>
-                    )}
-                  </div>
+                  <TeamSearchableSelect
+                    teams={teams}
+                    value={selectedTeamId}
+                    onChange={(id) => {
+                      setSelectedTeamId(id);
+                      setValue("teamId", id);
+                    }}
+                    error={errors.teamId?.message}
+                  />
                 )}
+
+                {selectedType !== "CLUB_EVENT" &&
+                  selectedType !== "BLACKOUT" &&
+                  (fixedTeamId || selectedTeamId) &&
+                  teams.filter((t) => t.id !== (fixedTeamId || selectedTeamId)).length >
+                    0 && (
+                    <TaggedTeamsMultiPicker
+                      teams={teams.filter(
+                        (t) => t.id !== (fixedTeamId || selectedTeamId)
+                      )}
+                      selectedIds={taggedTeamIds}
+                      onChange={setTaggedTeamIds}
+                    />
+                  )}
 
                 {selectedType === "CLUB_EVENT" && (
                   <div className="flex items-center gap-2">
@@ -1227,6 +1234,266 @@ export function EventForm({
         />
       )}
     </>
+  );
+}
+
+function TeamSearchableSelect({
+  teams,
+  value,
+  onChange,
+  error,
+}: {
+  teams: Team[];
+  value: string;
+  onChange: (id: string) => void;
+  error?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [menuKey, setMenuKey] = useState(0);
+
+  const selected = teams.find((t) => t.id === value);
+
+  const options = useMemo(
+    () => [
+      {
+        id: "__none__",
+        name: "Select a team",
+        color: "",
+        keywords: "none clear select team",
+      },
+      ...teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        keywords: t.name.toLowerCase(),
+      })),
+    ],
+    [teams]
+  );
+
+  return (
+    <div className="grid gap-2">
+      <Label>Team</Label>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) setMenuKey((k) => k + 1);
+        }}
+      >
+        <PopoverTrigger
+          className={cn(
+            "flex w-full min-h-11 items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm",
+            "hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            "dark:bg-input/30 dark:hover:bg-input/50"
+          )}
+          aria-expanded={open}
+        >
+          {selected ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-left font-normal">
+              <span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: selected.color }}
+              />
+              <span className="truncate" title={selected.name}>
+                {selected.name}
+              </span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Select a team</span>
+          )}
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="p-0 w-[min(100vw-1rem,28rem)]"
+          sideOffset={4}
+        >
+          <Command key={menuKey}>
+            <CommandInput placeholder="Search teams…" className="h-9" />
+            <CommandList>
+              <CommandEmpty>No matches.</CommandEmpty>
+              <CommandGroup>
+                {options.map((o) => (
+                  <CommandItem
+                    key={o.id}
+                    value={`${o.name} ${o.keywords}`}
+                    onSelect={() => {
+                      onChange(o.id === "__none__" ? "" : o.id);
+                      setOpen(false);
+                    }}
+                    className="items-center gap-2 py-2"
+                  >
+                    {o.color ? (
+                      <span
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: o.color }}
+                      />
+                    ) : (
+                      <span className="h-2.5 w-2.5 shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-left">
+                      {o.name}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+function TaggedTeamsMultiPicker({
+  teams,
+  selectedIds,
+  onChange,
+}: {
+  teams: Team[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const q = search.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!q) return teams;
+    return teams.filter((t) => t.name.toLowerCase().includes(q));
+  }, [teams, q]);
+
+  const selectedTeams = useMemo(
+    () =>
+      selectedIds
+        .map((id) => teams.find((t) => t.id === id))
+        .filter((t): t is Team => !!t),
+    [selectedIds, teams]
+  );
+
+  function toggle(id: string) {
+    onChange(
+      selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id]
+    );
+  }
+
+  function remove(id: string) {
+    onChange(selectedIds.filter((x) => x !== id));
+  }
+
+  return (
+    <div className="grid gap-2">
+      <Label>Also show for teams</Label>
+      <p className="text-xs text-muted-foreground">
+        Jobs and volunteer signup lists include this event when filtering by these teams
+        (same club). Search and pick teams; the form stays compact.
+      </p>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setSearch("");
+        }}
+      >
+        <PopoverTrigger
+          className={cn(
+            "flex w-full min-h-11 items-center justify-between rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors",
+            "hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            selectedIds.length === 0 && "text-muted-foreground"
+          )}
+        >
+          <span className="truncate text-left">
+            {selectedIds.length === 0
+              ? "Add teams…"
+              : `${selectedIds.length} team${selectedIds.length !== 1 ? "s" : ""} tagged`}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180"
+            )}
+          />
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-[min(100vw-1rem,28rem)] p-0"
+          sideOffset={4}
+        >
+          <div className="border-b border-border/50 px-2 py-1.5">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search teams…"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1">
+            {filtered.length === 0 && (
+              <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+                {teams.length === 0 ? "No other teams" : "No matches"}
+              </p>
+            )}
+            {filtered.map((t) => {
+              const isSelected = selectedIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggle(t.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                    isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted"
+                  )}
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    className="pointer-events-none shrink-0"
+                  />
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {selectedTeams.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedTeams.map((t) => (
+            <span
+              key={t.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/20 bg-primary/5 py-0.5 pl-2 pr-1 text-xs"
+            >
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: t.color }}
+              />
+              <span className="truncate font-medium" title={t.name}>
+                {t.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => remove(t.id)}
+                className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                aria-label={`Remove ${t.name}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

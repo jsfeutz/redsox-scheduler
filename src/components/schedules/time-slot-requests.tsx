@@ -173,8 +173,11 @@ export function TimeSlotRequests({ open, onClose }: TimeSlotRequestsProps) {
 
 export function TimeSlotRequestsBadge({
   onClick,
+  compact,
 }: {
   onClick: () => void;
+  /** Icon-only square button for mobile toolbars */
+  compact?: boolean;
 }) {
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -202,6 +205,28 @@ export function TimeSlotRequestsBadge({
     return () => clearInterval(interval);
   }, []);
 
+  const countBubble = pendingCount > 0 && (
+    <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs font-bold px-1">
+      {pendingCount > 9 ? "9+" : pendingCount}
+    </span>
+  );
+
+  if (compact) {
+    return (
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onClick}
+        className="relative h-11 w-11 min-h-11 min-w-11 shrink-0 touch-manipulation"
+        aria-label={`Time slot requests${pendingCount > 0 ? `, ${pendingCount} pending` : ""}`}
+        title="Time slot requests"
+      >
+        <Bell className="h-5 w-5" />
+        {countBubble}
+      </Button>
+    );
+  }
+
   return (
     <Button
       variant="outline"
@@ -212,7 +237,7 @@ export function TimeSlotRequestsBadge({
       <Bell className="h-4 w-4 mr-1.5" />
       Requests
       {pendingCount > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1">
+        <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs font-bold px-1">
           {pendingCount}
         </span>
       )}
