@@ -55,6 +55,8 @@ interface SignupReminderPayload {
   jobName: string;
   eventTitle: string;
   eventDate: string;
+  startTimeIso?: string;
+  endTimeIso?: string;
   location: string;
   hoursUntil: number;
   eventId?: string;
@@ -226,8 +228,8 @@ async function handleSignupReminder(job: Job<SignupReminderPayload>) {
         jobName: d.jobName,
         eventTitle: d.eventTitle,
         eventDate: d.eventDate,
-        startTime: d.eventDate,
-        endTime: "",
+        startTime: d.startTimeIso || d.eventDate,
+        endTime: d.endTimeIso || "",
         location: d.location,
         cancelToken: "",
         mySignupsToken: "",

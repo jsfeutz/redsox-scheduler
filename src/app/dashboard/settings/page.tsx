@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth-helpers";
 import { redirect } from "next/navigation";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
+import { getOrgTimeZone, getOrgTimeZoneLabel } from "@/lib/org-datetime";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -57,6 +58,8 @@ export default async function SettingsPage() {
       <SettingsTabs
         organizationName={organization.name}
         organizationId={organization.id}
+        organizationTimeZone={getOrgTimeZone()}
+        organizationTimeZoneLabel={getOrgTimeZoneLabel()}
         teamJobsCountHours={organization.teamJobsCountHours}
         teamJobsPublicSignup={organization.teamJobsPublicSignup}
         requiredVolunteerHours={organization.requiredVolunteerHours}

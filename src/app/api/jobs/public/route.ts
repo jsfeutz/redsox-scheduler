@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSeasonTokenExpiry } from "@/lib/token-expiry";
-import { format } from "date-fns";
 import { notifyJobSignup } from "@/lib/notify";
 import { isValidComfortLevel } from "@/lib/comfort-level";
+import { formatEventDateLong } from "@/lib/org-datetime";
 
 export async function GET() {
   const now = new Date();
@@ -176,7 +176,7 @@ export async function POST(req: Request) {
         phone: phone?.trim() || null,
         jobName: assignment.gameJob.jobTemplate.name,
         eventTitle: evt?.title ?? "Event",
-        eventDate: evt ? format(new Date(evt.startTime), "EEEE, MMMM d 'at' h:mm a") : "",
+        eventDate: evt ? formatEventDateLong(new Date(evt.startTime)) : "",
         startTime: evt?.startTime?.toISOString() ?? new Date().toISOString(),
         endTime: evt?.endTime?.toISOString() ?? new Date().toISOString(),
         location,
@@ -212,7 +212,9 @@ export async function POST(req: Request) {
               phone: phone?.trim() || null,
               jobName: assignment.gameJob.jobTemplate.name,
               eventTitle: evt?.title ?? "Event",
-              eventDate: format(startTime, "EEEE, MMMM d 'at' h:mm a"),
+              eventDate: formatEventDateLong(startTime),
+              startTimeIso: startTime.toISOString(),
+              endTimeIso: evt?.endTime ? new Date(evt.endTime).toISOString() : "",
               location,
               hoursUntil: assignment.reminderHoursBefore,
               eventId: undefined,

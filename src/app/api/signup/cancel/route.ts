@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { format } from "date-fns";
 import { notifyAdminsVolunteerCancellation } from "@/lib/notify";
+import { formatEventDateFull } from "@/lib/org-datetime";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       jobName: assignment.gameJob.jobTemplate.name,
       eventTitle: evt?.title ?? "Event",
       eventDate: evt?.startTime
-        ? format(new Date(evt.startTime), "EEEE, MMM d, yyyy 'at' h:mm a")
+        ? formatEventDateFull(new Date(evt.startTime))
         : "",
       location: loc,
     });

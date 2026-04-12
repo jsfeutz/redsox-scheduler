@@ -4,6 +4,33 @@ import { useState, useEffect, useCallback, Fragment } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { toast } from "sonner";
+
+const ORG_TZ = process.env.NEXT_PUBLIC_ORG_TIMEZONE || "America/Chicago";
+
+function formatIsoInOrgTz(iso: string): string | null {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", {
+    timeZone: ORG_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function extractTimeSummary(
+  label: string,
+  obj: unknown
+): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const rec = obj as Record<string, unknown>;
+  const start = typeof rec.startTime === "string" ? formatIsoInOrgTz(rec.startTime) : null;
+  const end = typeof rec.endTime === "string" ? formatIsoInOrgTz(rec.endTime) : null;
+  if (!start) return null;
+  return end ? `${label}: ${start} – ${end}` : `${label}: ${start}`;
+}
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -267,6 +294,16 @@ export function EventAuditReport() {
                         {open && hasDetail ? (
                           <TableRow>
                             <TableCell colSpan={6} className="bg-muted/40 p-3">
+                              {(() => {
+                                const beforeLine = extractTimeSummary("Before", row.before);
+                                const afterLine = extractTimeSummary("After", row.after);
+                                return (beforeLine || afterLine) ? (
+                                  <div className="mb-2 text-xs space-y-0.5">
+                                    {beforeLine && <p className="text-muted-foreground">{beforeLine}</p>}
+                                    {afterLine && <p className="font-medium">{afterLine}</p>}
+                                  </div>
+                                ) : null;
+                              })()}
                               <pre className="text-xs overflow-x-auto whitespace-pre-wrap break-all">
                                 {JSON.stringify(
                                   { before: row.before, after: row.after, meta: row.meta },

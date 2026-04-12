@@ -91,6 +91,8 @@ interface TeamOption {
 interface SettingsTabsProps {
   organizationName: string;
   organizationId: string;
+  organizationTimeZone?: string;
+  organizationTimeZoneLabel?: string;
   teamJobsCountHours: boolean;
   teamJobsPublicSignup: boolean;
   requiredVolunteerHours: number;
@@ -111,6 +113,8 @@ const ROWS_PER_PAGE = 10;
 export function SettingsTabs({
   organizationName,
   organizationId,
+  organizationTimeZone,
+  organizationTimeZoneLabel,
   teamJobsCountHours,
   teamJobsPublicSignup,
   requiredVolunteerHours,
@@ -177,6 +181,34 @@ export function SettingsTabs({
               </div>
             </CardContent>
           </Card>
+
+          {organizationTimeZone && (
+            <Card className="rounded-2xl border-border/50">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
+                    <Clock className="h-5 w-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Timezone</CardTitle>
+                    <CardDescription className="text-xs">
+                      Used for emails, SMS reminders, and all server-generated event times
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-1 max-w-sm">
+                  <p className="text-sm font-medium">
+                    {organizationTimeZoneLabel || organizationTimeZone}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {organizationTimeZone}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <PublicLinksCard />
 

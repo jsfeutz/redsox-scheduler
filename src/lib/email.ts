@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { getOrgTimeZone } from "@/lib/org-datetime";
 const APP_URL = process.env.APP_URL || "http://localhost:3003";
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "1025", 10);
@@ -66,6 +67,7 @@ export async function sendInvitation(opts: {
     ? opts.teamRole.replace(/_/g, " ").toLowerCase()
     : null;
   const expiresFormatted = opts.expiresAt.toLocaleDateString("en-US", {
+    timeZone: getOrgTimeZone(),
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -227,14 +229,17 @@ export async function sendSlotRequestNotification(opts: {
   reason: string | null;
   requestId: string;
 }) {
+  const tz = getOrgTimeZone();
   const date = new Date(opts.eventDate);
   const formattedDate = date.toLocaleDateString("en-US", {
+    timeZone: tz,
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
   });
   const formattedTime = date.toLocaleTimeString("en-US", {
+    timeZone: tz,
     hour: "numeric",
     minute: "2-digit",
   });
@@ -280,6 +285,7 @@ export async function sendSlotRequestResponse(opts: {
 }) {
   const date = new Date(opts.eventDate);
   const formattedDate = date.toLocaleDateString("en-US", {
+    timeZone: getOrgTimeZone(),
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -359,6 +365,7 @@ export async function sendJobCancellationNotification(opts: {
   const date = opts.eventDate ? new Date(opts.eventDate) : null;
   const formattedDate = date
     ? date.toLocaleDateString("en-US", {
+        timeZone: getOrgTimeZone(),
         weekday: "long",
         month: "long",
         day: "numeric",

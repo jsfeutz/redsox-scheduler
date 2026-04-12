@@ -17,6 +17,10 @@ import {
   AdminNotifyEvent,
   NotifyTrigger,
 } from "@prisma/client";
+import {
+  formatEventDateShort,
+  formatEventDateCompact,
+} from "@/lib/org-datetime";
 
 const APP_URL = process.env.APP_URL || "http://localhost:3003";
 const ORG_NAME = "Rubicon Redsox";
@@ -473,7 +477,7 @@ export async function getReminderWindows(): Promise<number[]> {
 }
 
 export function formatEventDate(date: Date): string {
-  return format(date, "EEE, MMM d 'at' h:mm a");
+  return formatEventDateShort(date);
 }
 
 export async function notifyAdminsVolunteerCancellation(opts: {
@@ -634,7 +638,7 @@ export async function processUnfilledJobs24hNotifications(): Promise<{
   let eventsNotified = 0;
 
   for (const [eventId, data] of byEvent) {
-    const when = format(data.start, "EEE MMM d, h:mm a");
+    const when = formatEventDateCompact(data.start);
     const block = data.lines.join("; ");
     let anyRecipient = false;
 
@@ -751,7 +755,7 @@ export async function processUnfilledJobsWeeklyDigest(): Promise<{
       e.team?.organizationId ?? e.subFacility?.facility?.organizationId;
     if (orgId !== org.id) continue;
     const open = j.slotsNeeded - j.assignments.length;
-    const when = format(new Date(e.startTime), "EEE MMM d, h:mm a");
+    const when = formatEventDateCompact(new Date(e.startTime));
     lines.push(`${when} — ${e.title}: ${j.jobTemplate.name} (${open} open)`);
   }
 
