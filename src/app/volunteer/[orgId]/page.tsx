@@ -15,7 +15,7 @@ export default async function OrgVolunteerPage({ params }: PageProps) {
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, smsEnabled: true },
   });
 
   if (!org) notFound();
@@ -121,6 +121,7 @@ export default async function OrgVolunteerPage({ params }: PageProps) {
                         {event.volunteerSlots.map((slot) => (
                           <VolunteerSlotCard
                             key={slot.id}
+                            smsEnabled={org?.smsEnabled ?? true}
                             slot={{
                               id: slot.id,
                               name: slot.name,

@@ -68,6 +68,7 @@ export default async function SettingsPage() {
         brandingIconVersion={organization.brandingIconVersion}
         smsEnabled={organization.smsEnabled}
         reminderHoursBefore={organization.reminderHoursBefore}
+        cancelCutoffHours={organization.cancelCutoffHours}
         isAdmin={isAdmin}
         canManage={canManage}
         templates={templates}

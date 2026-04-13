@@ -145,10 +145,11 @@ export function EventAuditReport() {
   }
 
   const actionVariant = (a: string) => {
-    if (a === "CREATE") return "default" as const;
+    if (a === "CREATE" || a === "VOLUNTEER_SIGNUP") return "default" as const;
     if (a === "UPDATE" || a === "TEAM_TRANSFER") return "secondary" as const;
     if (a === "REMOVE" || a === "SERIES_CANCEL" || a === "BUMP_PENDING")
       return "outline" as const;
+    if (a === "VOLUNTEER_CANCEL") return "destructive" as const;
     return "destructive" as const;
   };
 
@@ -202,7 +203,7 @@ export function EventAuditReport() {
             <div className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4 shrink-0" />
               <span>
-                Schedule changes (creates, edits, cancellations, deletes, slot transfers). Most
+                Schedule changes (creates, edits, cancellations, deletes, slot transfers, volunteer signups). Most
                 recent first. Entries older than {SCHEDULE_EVENT_AUDIT_RETENTION_DAYS} days are
                 removed automatically.
               </span>
@@ -238,7 +239,7 @@ export function EventAuditReport() {
                 </p>
               ) : null}
             <div className="rounded-md border overflow-x-auto">
-              <Table>
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
@@ -281,13 +282,13 @@ export function EventAuditReport() {
                           <TableCell>
                             <Badge variant={actionVariant(row.action)}>{row.action}</Badge>
                           </TableCell>
-                          <TableCell className="max-w-[280px] text-sm">
+                          <TableCell className="text-sm min-w-[250px]" style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
                             {row.summary ?? "—"}
                           </TableCell>
                           <TableCell className="text-sm whitespace-nowrap">
                             {row.actorLabel}
                           </TableCell>
-                          <TableCell className="font-mono text-xs max-w-[120px] truncate">
+                          <TableCell className="font-mono text-xs whitespace-nowrap max-w-[150px] truncate" title={row.scheduleEventId ?? undefined}>
                             {row.scheduleEventId ?? "—"}
                           </TableCell>
                         </TableRow>

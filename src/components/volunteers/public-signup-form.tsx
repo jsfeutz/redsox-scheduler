@@ -10,12 +10,14 @@ import { CheckCircle2 } from "lucide-react";
 interface PublicSignupFormProps {
   slotId: string;
   slotName: string;
+  smsEnabled?: boolean;
   onSuccess?: () => void;
 }
 
 export function PublicSignupForm({
   slotId,
   slotName,
+  smsEnabled = true,
   onSuccess,
 }: PublicSignupFormProps) {
   const [name, setName] = useState("");
@@ -99,24 +101,26 @@ export function PublicSignupForm({
           className="h-12 rounded-xl text-base"
         />
       </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor={`phone-${slotId}`} className="text-base font-medium">
-          Phone <span className="text-muted-foreground font-normal">(optional)</span>
-        </Label>
-        <Input
-          id={`phone-${slotId}`}
-          type="tel"
-          placeholder="(920) 555-1234"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="h-12 rounded-xl text-base"
-        />
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          By providing your phone number, you consent to receive SMS notifications about your volunteer shift
-          (confirmations, reminders, and changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
-          Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
-        </p>
-      </div>
+      {smsEnabled && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={`phone-${slotId}`} className="text-base font-medium">
+            Phone <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id={`phone-${slotId}`}
+            type="tel"
+            placeholder="(920) 555-1234"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="h-12 rounded-xl text-base"
+          />
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            By providing your phone number, you consent to receive SMS notifications about your volunteer shift
+            (confirmations, reminders, and changes). Msg frequency varies (2-5/wk during season). Msg &amp; data rates may apply.
+            Reply STOP to cancel. <a href="/sms-consent" className="underline">SMS Consent</a> &middot; <a href="/privacy" className="underline">Privacy</a>
+          </p>
+        </div>
+      )}
       <Button
         type="submit"
         disabled={loading}

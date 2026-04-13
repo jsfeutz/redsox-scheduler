@@ -87,6 +87,7 @@ interface HelpWantedBoardProps {
   teams: FilterOption[];
   facilities: FilterOption[];
   compact?: boolean;
+  smsEnabled?: boolean;
 }
 
 export function HelpWantedBoard({
@@ -94,6 +95,7 @@ export function HelpWantedBoard({
   teams,
   facilities,
   compact = false,
+  smsEnabled = true,
 }: HelpWantedBoardProps) {
   const searchParams = useSearchParams();
   const highlightJobId = searchParams.get("job");
@@ -454,9 +456,9 @@ export function HelpWantedBoard({
           </CardContent>
         </Card>
       ) : viewMode === "table" ? (
-        <TableView jobs={paginatedJobs} highlightedId={highlightedId} highlightJobId={highlightJobId} highlightRef={highlightRef} />
+        <TableView jobs={paginatedJobs} highlightedId={highlightedId} highlightJobId={highlightJobId} highlightRef={highlightRef} smsEnabled={smsEnabled} />
       ) : (
-        <CardView jobsByDate={jobsByDate} orgJobs={orgJobs} compact={compact} highlightJobId={highlightJobId} />
+        <CardView jobsByDate={jobsByDate} orgJobs={orgJobs} compact={compact} highlightJobId={highlightJobId} smsEnabled={smsEnabled} />
       )}
 
       {/* Pagination */}
@@ -644,11 +646,13 @@ function CardView({
   orgJobs,
   compact = false,
   highlightJobId,
+  smsEnabled = true,
 }: {
   jobsByDate: Record<string, JobData[]>;
   orgJobs: JobData[];
   compact?: boolean;
   highlightJobId?: string | null;
+  smsEnabled?: boolean;
 }) {
   return (
     <div className={cn("space-y-6", compact && "space-y-4")}>
@@ -666,6 +670,7 @@ function CardView({
                 <HelpWantedJobCard
                   key={job.id}
                   autoOpen={job.id === highlightJobId}
+                  smsEnabled={smsEnabled}
                   job={{
                     id: job.id,
                     templateName: job.templateName,
@@ -760,6 +765,7 @@ function CardView({
                           <HelpWantedJobCard
                             key={job.id}
                             autoOpen={job.id === highlightJobId}
+                            smsEnabled={smsEnabled}
                             job={{
                               id: job.id,
                               templateName: job.templateName,
@@ -794,7 +800,7 @@ function CardView({
 
 /* ========== Table View ========== */
 
-function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs: JobData[]; highlightedId: string | null; highlightJobId: string | null; highlightRef: React.RefObject<HTMLTableRowElement | null> }) {
+function TableView({ jobs, highlightedId, highlightJobId, highlightRef, smsEnabled = true }: { jobs: JobData[]; highlightedId: string | null; highlightJobId: string | null; highlightRef: React.RefObject<HTMLTableRowElement | null>; smsEnabled?: boolean }) {
   return (
     <Card className="rounded-2xl border-border/50">
       {/* Desktop table */}
@@ -813,7 +819,7 @@ function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs
           </thead>
           <tbody>
             {jobs.map((job) => (
-              <TableRow key={job.id} job={job} highlighted={job.id === highlightedId} autoOpen={job.id === highlightJobId} highlightRef={job.id === highlightJobId ? highlightRef : undefined} />
+              <TableRow key={job.id} job={job} highlighted={job.id === highlightedId} autoOpen={job.id === highlightJobId} highlightRef={job.id === highlightJobId ? highlightRef : undefined} smsEnabled={smsEnabled} />
             ))}
           </tbody>
         </table>
@@ -822,14 +828,14 @@ function TableView({ jobs, highlightedId, highlightJobId, highlightRef }: { jobs
       {/* Mobile compact list */}
       <div className="sm:hidden divide-y divide-border/50">
         {jobs.map((job) => (
-          <MobileTableRow key={job.id} job={job} autoOpen={job.id === highlightJobId} />
+          <MobileTableRow key={job.id} job={job} autoOpen={job.id === highlightJobId} smsEnabled={smsEnabled} />
         ))}
       </div>
     </Card>
   );
 }
 
-function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; highlighted?: boolean; autoOpen?: boolean; highlightRef?: React.Ref<HTMLTableRowElement> }) {
+function TableRow({ job, highlighted, autoOpen, highlightRef, smsEnabled = true }: { job: JobData; highlighted?: boolean; autoOpen?: boolean; highlightRef?: React.Ref<HTMLTableRowElement>; smsEnabled?: boolean }) {
   const [count, setCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - count;
@@ -914,6 +920,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
             eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
             autoOpen={autoOpen}
             askComfortLevel={job.askComfortLevel}
+            smsEnabled={smsEnabled}
             onSuccess={(name) => {
               setCount((c) => c + 1);
               if (name) setNames((prev) => [...prev, name]);
@@ -929,7 +936,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef }: { job: JobData; 
   );
 }
 
-function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean }) {
+function MobileTableRow({ job, autoOpen, smsEnabled = true }: { job: JobData; autoOpen?: boolean; smsEnabled?: boolean }) {
   const [count, setCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - count;
@@ -976,6 +983,7 @@ function MobileTableRow({ job, autoOpen }: { job: JobData; autoOpen?: boolean })
               eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
               autoOpen={autoOpen}
               askComfortLevel={job.askComfortLevel}
+              smsEnabled={smsEnabled}
               onSuccess={(name) => {
                 setCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

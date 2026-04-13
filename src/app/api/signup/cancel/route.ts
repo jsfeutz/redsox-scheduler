@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyAdminsVolunteerCancellation } from "@/lib/notify";
 import { formatEventDateFull } from "@/lib/org-datetime";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
           jobTemplate: { select: { name: true } },
           scheduleEvent: {
             select: {
+              id: true,
               title: true,
               startTime: true,
               team: { select: { organizationId: true } },
@@ -43,11 +45,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Already cancelled" }, { status: 409 });
   }
 
-  await prisma.jobAssignment.update({
-    where: { id: assignment.id },
-    data: { cancelledAt: new Date() },
-  });
-
   const evt = assignment.gameJob.scheduleEvent;
   let orgId =
     evt?.team?.organizationId ??
@@ -56,6 +53,50 @@ export async function POST(req: Request) {
   if (!orgId) {
     const fallback = await prisma.organization.findFirst({ select: { id: true } });
     orgId = fallback?.id ?? null;
+  }
+
+  if (orgId && evt) {
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { cancelCutoffHours: true },
+    });
+    const cutoff = org?.cancelCutoffHours ?? 0;
+    if (cutoff > 0) {
+      const hoursUntil =
+        (new Date(evt.startTime).getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntil < cutoff) {
+        return NextResponse.json(
+          {
+            error: `Signups cannot be cancelled within ${cutoff} hours of the event.`,
+            cutoffHours: cutoff,
+          },
+          { status: 403 }
+        );
+      }
+    }
+  }
+
+  await prisma.jobAssignment.update({
+    where: { id: assignment.id },
+    data: { cancelledAt: new Date() },
+  });
+
+  if (orgId && evt) {
+    void logScheduleEventAudit(prisma, {
+      organizationId: orgId,
+      scheduleEventId: evt.id,
+      action: "VOLUNTEER_CANCEL",
+      actorUserId: null,
+      actorLabel: `${assignment.name} (${assignment.email})`,
+      summary: `${assignment.name} (${assignment.email}) cancelled ${assignment.gameJob.jobTemplate.name} signup for ${evt.title}`,
+      before: {
+        assignmentId: assignment.id,
+        name: assignment.name,
+        email: assignment.email,
+        jobName: assignment.gameJob.jobTemplate.name,
+        eventTitle: evt.title,
+      },
+    });
   }
 
   const loc =

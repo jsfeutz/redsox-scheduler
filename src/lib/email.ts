@@ -190,6 +190,68 @@ export async function sendSignupConfirmation(opts: {
   await send(opts.to, `Signup confirmed: ${opts.jobName} — ${opts.eventTitle}`, html);
 }
 
+export async function sendSignupReminder(opts: {
+  to: string;
+  name: string;
+  jobName: string;
+  eventTitle: string;
+  eventDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  hoursUntil: number;
+  cancelToken: string;
+  mySignupsToken: string;
+}) {
+  const mySignupsUrl = opts.mySignupsToken
+    ? `${APP_URL}/my-signups?token=${opts.mySignupsToken}`
+    : `${APP_URL}/my-signups`;
+  const cancelUrl = opts.cancelToken
+    ? `${APP_URL}/cancel-signup?token=${opts.cancelToken}`
+    : "";
+
+  const timeLabel =
+    opts.hoursUntil < 1
+      ? `in ${Math.round(opts.hoursUntil * 60)} minutes`
+      : opts.hoursUntil === 1
+        ? "in 1 hour"
+        : opts.hoursUntil <= 2
+          ? `in ${opts.hoursUntil} hours`
+          : "tomorrow";
+
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <div style="background:#dc2626;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px">
+        <h1 style="color:#fff;margin:0;font-size:20px">Rubicon Redsox</h1>
+      </div>
+      <h2 style="margin:0 0 8px">⏰ Reminder: You're up ${timeLabel}, ${opts.name}!</h2>
+      <p style="color:#666;margin:0 0 16px">
+        Just a friendly reminder about your upcoming volunteer shift.
+      </p>
+      <div style="background:#f9f9f9;border-radius:8px;padding:16px;margin-bottom:20px">
+        <p style="margin:0 0 4px"><strong>Job:</strong> ${opts.jobName}</p>
+        <p style="margin:0 0 4px"><strong>Event:</strong> ${opts.eventTitle}</p>
+        <p style="margin:0 0 4px"><strong>Date:</strong> ${opts.eventDate}</p>
+        <p style="margin:0"><strong>Location:</strong> ${opts.location}</p>
+      </div>
+      <div style="margin-bottom:16px">
+        <a href="${mySignupsUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px">
+          📋 View My Signups
+        </a>
+      </div>
+      ${cancelUrl ? `
+      <hr style="border:none;border-top:1px solid #eee;margin:20px 0" />
+      <p style="color:#999;font-size:13px;margin:0 0 8px">Can't make it?</p>
+      <a href="${cancelUrl}" style="display:inline-block;background:#f3f4f6;color:#dc2626;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:600;font-size:13px;border:1px solid #e5e7eb">
+        Cancel This Signup
+      </a>
+      ` : ""}
+    </div>
+  `;
+
+  await send(opts.to, `Reminder: ${opts.jobName} — ${opts.eventTitle} starts ${timeLabel}`, html);
+}
+
 export async function sendMagicLink(opts: {
   to: string;
   token: string;

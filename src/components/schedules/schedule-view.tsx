@@ -475,10 +475,12 @@ export function ScheduleView({
   }, [fetchEvents]);
 
   const openedEventFromUrl = useRef(false);
+  const navigatedToEventMonth = useRef(false);
   useEffect(() => {
-    if (openedEventFromUrl.current || loading || events.length === 0) return;
+    if (openedEventFromUrl.current || loading) return;
     const eventId = searchParams.get("event");
     if (!eventId) return;
+
     const match = events.find((e) => e.id === eventId);
     if (match) {
       openedEventFromUrl.current = true;
@@ -487,8 +489,23 @@ export function ScheduleView({
       sp.delete("event");
       const qs = sp.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      return;
     }
-  }, [events, loading, searchParams, pathname, router]);
+
+    if (navigatedToEventMonth.current || events.length === 0) return;
+    navigatedToEventMonth.current = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/schedules/${eventId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const eventDate = parseISO(data.startTime);
+        if (!isSameMonth(eventDate, currentDate)) {
+          setCurrentDate(eventDate);
+        }
+      } catch { /* best-effort */ }
+    })();
+  }, [events, loading, searchParams, pathname, router, currentDate]);
 
   function navigatePrev() {
     if (viewMode === "agenda") return;
@@ -571,8 +588,11 @@ export function ScheduleView({
     const sorted = [...filteredEvents].sort((a, b) =>
       a.startTime.localeCompare(b.startTime)
     );
-    const first = startOfDay(parseISO(sorted[0].startTime));
+    const today = startOfDay(new Date());
+    const earliest = startOfDay(parseISO(sorted[0].startTime));
+    const first = earliest < today ? today : earliest;
     const last = startOfDay(parseISO(sorted[sorted.length - 1].startTime));
+    if (first > last) return [];
     return eachDayOfInterval({ start: first, end: last });
   })();
 

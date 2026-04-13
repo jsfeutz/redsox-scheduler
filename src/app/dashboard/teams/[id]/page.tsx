@@ -49,7 +49,7 @@ export default async function TeamDetailPage({ params }: Props) {
   const [upcomingEvents, globalTeamTemplates, teamOverrides, teamSpecificTemplates, teamLevelJobs] =
     await Promise.all([
       prisma.scheduleEvent.findMany({
-        where: { teamId: id, endTime: { gte: todayStart } },
+        where: { teamId: id, endTime: { gte: todayStart }, cancelledAt: null, cancelledByBumpId: null },
         include: {
           subFacility: {
             include: { facility: { select: { id: true, name: true } } },
@@ -183,6 +183,8 @@ export default async function TeamDetailPage({ params }: Props) {
         where: {
           teamId: { not: id },
           subFacilityId: { in: [...new Set(subFacilityIds)] },
+          cancelledAt: null,
+          cancelledByBumpId: null,
           startTime: { lt: latest },
           endTime: { gt: earliest },
         },

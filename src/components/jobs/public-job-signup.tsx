@@ -34,6 +34,8 @@ interface PublicJobSignupProps {
   autoOpen?: boolean;
   /** When true (from job template), show comfort level on the signup form */
   askComfortLevel?: boolean;
+  /** When false, hide the phone/SMS fields entirely */
+  smsEnabled?: boolean;
   onSuccess: (name?: string) => void;
 }
 
@@ -46,6 +48,7 @@ export function PublicJobSignup({
   eventTime,
   autoOpen = false,
   askComfortLevel = false,
+  smsEnabled = true,
   onSuccess,
 }: PublicJobSignupProps) {
   const { identity, setIdentity } = useVolunteerIdentity();
@@ -107,7 +110,7 @@ export function PublicJobSignup({
           phone: phone.trim() || undefined,
           playerName: playerName.trim() || undefined,
           ...(askComfortLevel && comfortLevel ? { comfortLevel } : {}),
-          ...(reminderHours ? { reminderHoursBefore: parseInt(reminderHours, 10) } : {}),
+          ...(reminderHours ? { reminderHoursBefore: parseFloat(reminderHours) } : {}),
         }),
       });
 
@@ -175,58 +178,60 @@ export function PublicJobSignup({
           className="h-11 rounded-xl text-base"
         />
       </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor={`job-phone-${jobId}`} className="text-base font-medium">
-          Phone <span className="text-muted-foreground font-normal">(optional)</span>
-        </Label>
-        <Input
-          id={`job-phone-${jobId}`}
-          type="tel"
-          placeholder="(920) 555-1234"
-          value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value);
-            if (e.target.value.replace(/\D/g, "").length < 10) setSmsOptIn(false);
-          }}
-          className="h-11 rounded-xl text-base"
-        />
-        {phoneProvided && (
-          <label className="flex items-start gap-2.5 cursor-pointer text-sm leading-relaxed rounded-xl border border-border/80 bg-muted/30 p-3">
-            <input
-              type="checkbox"
-              checked={smsOptIn}
-              onChange={(e) => setSmsOptIn(e.target.checked)}
-              className="mt-1 h-5 w-5 shrink-0 accent-primary"
-            />
-            <span>
-              <strong className="text-foreground">I agree to receive SMS text messages</strong> from
-              Rubicon Redsox at this mobile number for <strong className="text-foreground">volunteer
-              notifications only</strong> (signup confirmations, shift reminders, schedule changes, and
-              cancellations). Message frequency is typically <strong className="text-foreground">2–5
-              messages per week</strong> during the baseball season. <strong className="text-foreground">Message
-              and data rates may apply.</strong> Reply <strong className="text-foreground">STOP</strong> to
-              opt out at any time. See{" "}
-              <a href="/sms-consent" className="text-primary underline font-medium">
-                SMS consent
-              </a>{" "}
-              and{" "}
-              <a href="/privacy" className="text-primary underline font-medium">
-                Privacy
-              </a>
-              .
-            </span>
-          </label>
-        )}
-        {!phoneProvided && (
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Phone is optional. If you add a number, you&apos;ll confirm SMS consent before signing up.
-            {" "}
-            <a href="/sms-consent" className="underline">SMS consent</a>
-            {" · "}
-            <a href="/business-verification" className="underline">Program info</a>
-          </p>
-        )}
-      </div>
+      {smsEnabled && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={`job-phone-${jobId}`} className="text-base font-medium">
+            Phone <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id={`job-phone-${jobId}`}
+            type="tel"
+            placeholder="(920) 555-1234"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              if (e.target.value.replace(/\D/g, "").length < 10) setSmsOptIn(false);
+            }}
+            className="h-11 rounded-xl text-base"
+          />
+          {phoneProvided && (
+            <label className="flex items-start gap-2.5 cursor-pointer text-sm leading-relaxed rounded-xl border border-border/80 bg-muted/30 p-3">
+              <input
+                type="checkbox"
+                checked={smsOptIn}
+                onChange={(e) => setSmsOptIn(e.target.checked)}
+                className="mt-1 h-5 w-5 shrink-0 accent-primary"
+              />
+              <span>
+                <strong className="text-foreground">I agree to receive SMS text messages</strong> from
+                Rubicon Redsox at this mobile number for <strong className="text-foreground">volunteer
+                notifications only</strong> (signup confirmations, shift reminders, schedule changes, and
+                cancellations). Message frequency is typically <strong className="text-foreground">2–5
+                messages per week</strong> during the baseball season. <strong className="text-foreground">Message
+                and data rates may apply.</strong> Reply <strong className="text-foreground">STOP</strong> to
+                opt out at any time. See{" "}
+                <a href="/sms-consent" className="text-primary underline font-medium">
+                  SMS consent
+                </a>{" "}
+                and{" "}
+                <a href="/privacy" className="text-primary underline font-medium">
+                  Privacy
+                </a>
+                .
+              </span>
+            </label>
+          )}
+          {!phoneProvided && (
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Phone is optional. If you add a number, you&apos;ll confirm SMS consent before signing up.
+              {" "}
+              <a href="/sms-consent" className="underline">SMS consent</a>
+              {" · "}
+              <a href="/business-verification" className="underline">Program info</a>
+            </p>
+          )}
+        </div>
+      )}
       {askComfortLevel && (
         <div className="grid gap-1.5">
           <Label className="text-base font-medium">
@@ -263,6 +268,10 @@ export function PublicJobSignup({
             className="h-11 rounded-xl text-base border border-input bg-background px-3"
           >
             <option value="">No reminder</option>
+            <option value="0.25">15 minutes before</option>
+            <option value="0.5">30 minutes before</option>
+            <option value="0.75">45 minutes before</option>
+            <option value="1">1 hour before</option>
             <option value="2">2 hours before</option>
             <option value="24">24 hours before</option>
             <option value="48">48 hours before</option>

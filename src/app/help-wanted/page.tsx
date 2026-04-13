@@ -14,7 +14,7 @@ export default async function HelpWantedPage() {
   const isAuthenticated = !!session?.user;
 
   const org = await prisma.organization.findFirst({
-    select: { teamJobsPublicSignup: true },
+    select: { teamJobsPublicSignup: true, smsEnabled: true },
   });
 
   const where: Prisma.GameJobWhereInput = {
@@ -146,6 +146,7 @@ export default async function HelpWantedPage() {
             jobs={jobData}
             teams={teams}
             facilities={facilities}
+            smsEnabled={org?.smsEnabled ?? true}
             compact
           />
         </div>
@@ -188,6 +189,7 @@ export default async function HelpWantedPage() {
             jobs={jobData}
             teams={teams}
             facilities={facilities}
+            smsEnabled={org?.smsEnabled ?? true}
           />
 
           <PublicFooter />

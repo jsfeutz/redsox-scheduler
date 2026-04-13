@@ -9,6 +9,9 @@ import { VolunteerSlotCard } from "./volunteer-slot-card";
 import { PublicFooter } from "@/components/public-footer";
 
 export default async function VolunteerPage() {
+  const org = await prisma.organization.findFirst({
+    select: { smsEnabled: true },
+  });
   const events = await prisma.scheduleEvent.findMany({
     where: {
       startTime: { gte: new Date() },
@@ -128,6 +131,7 @@ export default async function VolunteerPage() {
                             {event.volunteerSlots.map((slot) => (
                               <VolunteerSlotCard
                                 key={slot.id}
+                                smsEnabled={org?.smsEnabled ?? true}
                                 slot={{
                                   id: slot.id,
                                   name: slot.name,

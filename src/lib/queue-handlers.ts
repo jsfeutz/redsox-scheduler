@@ -5,15 +5,17 @@ import {
   sendEventAddedNotification,
   sendEventCancelledNotification,
   sendEventTimeChangedNotification,
-  sendSignupConfirmation,
+  sendSignupReminder,
   sendJobCancellationNotification,
 } from "@/lib/email";
+import { formatEventDateLong } from "@/lib/org-datetime";
 import type { NotifyTrigger } from "@prisma/client";
 
 export const JOB_NAMES = {
   SEND_NOTIFICATION: "send-notification",
   EVENT_CHANGE_NOTIFICATION: "event-change-notification",
   SIGNUP_REMINDER: "signup-reminder",
+  REMINDER_SWEEP: "reminder-sweep",
   UNFILLED_JOBS_CHECK: "unfilled-jobs-check",
   AUDIT_LOG_RETENTION: "audit-log-retention",
 } as const;
@@ -216,13 +218,22 @@ async function handleSignupReminder(job: Job<SignupReminderPayload>) {
 
   const assignment = await prisma.jobAssignment.findUnique({
     where: { id: d.assignmentId },
-    select: { cancelledAt: true },
+    select: { cancelledAt: true, cancelToken: true, email: true },
   });
   if (!assignment || assignment.cancelledAt) return;
 
+  let mySignupsToken = "";
+  try {
+    const ev = await prisma.emailVerification.findFirst({
+      where: { email: d.email },
+      select: { token: true },
+    });
+    mySignupsToken = ev?.token ?? "";
+  } catch { /* best-effort */ }
+
   if (d.email) {
     try {
-      await sendSignupConfirmation({
+      await sendSignupReminder({
         to: d.email,
         name: d.name,
         jobName: d.jobName,
@@ -231,8 +242,9 @@ async function handleSignupReminder(job: Job<SignupReminderPayload>) {
         startTime: d.startTimeIso || d.eventDate,
         endTime: d.endTimeIso || "",
         location: d.location,
-        cancelToken: "",
-        mySignupsToken: "",
+        hoursUntil: d.hoursUntil,
+        cancelToken: assignment.cancelToken,
+        mySignupsToken,
       });
     } catch (e) {
       console.error("[QUEUE] Signup reminder email failed:", e);
@@ -241,9 +253,11 @@ async function handleSignupReminder(job: Job<SignupReminderPayload>) {
 
   if (d.phone) {
     const timeLabel =
-      d.hoursUntil <= 2
-        ? `in ${d.hoursUntil} hour${d.hoursUntil === 1 ? "" : "s"}`
-        : `tomorrow`;
+      d.hoursUntil < 1
+        ? `in ${Math.round(d.hoursUntil * 60)} minutes`
+        : d.hoursUntil <= 2
+          ? `in ${d.hoursUntil} hour${d.hoursUntil === 1 ? "" : "s"}`
+          : `tomorrow`;
     const msg = `${ORG_NAME} Reminder: Your ${d.jobName} shift at ${d.location} starts ${timeLabel} (${d.eventDate}). Reply STOP to opt out.`;
     await sendSms(d.phone, msg, {
       type: "JOB_REMINDER",
@@ -253,6 +267,11 @@ async function handleSignupReminder(job: Job<SignupReminderPayload>) {
       reminderKey: `reminder:${d.assignmentId}:${d.hoursUntil}h`,
     });
   }
+
+  await prisma.jobAssignment.update({
+    where: { id: d.assignmentId },
+    data: { reminderSentAt: new Date() },
+  });
 }
 
 async function handleUnfilledJobsCheck() {
@@ -279,6 +298,98 @@ async function handleAuditLogRetention() {
   }
 }
 
+async function handleReminderSweep() {
+  const now = new Date();
+
+  // Mark any unsent reminders for past events so they stop appearing
+  await prisma.jobAssignment.updateMany({
+    where: {
+      reminderHoursBefore: { not: null },
+      reminderSentAt: null,
+      gameJob: { scheduleEvent: { startTime: { lte: now } } },
+    },
+    data: { reminderSentAt: now },
+  });
+
+  const assignments = await prisma.jobAssignment.findMany({
+    where: {
+      reminderHoursBefore: { not: null },
+      reminderSentAt: null,
+      cancelledAt: null,
+      gameJob: {
+        scheduleEvent: { startTime: { gt: now } },
+      },
+    },
+    include: {
+      gameJob: {
+        include: {
+          jobTemplate: { select: { name: true } },
+          scheduleEvent: {
+            select: {
+              title: true,
+              startTime: true,
+              endTime: true,
+              subFacility: {
+                select: { name: true, facility: { select: { name: true } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  let sent = 0;
+  for (const a of assignments) {
+    const evt = a.gameJob.scheduleEvent;
+    if (!evt || !a.reminderHoursBefore || !a.email) continue;
+
+    const sendAt = new Date(evt.startTime.getTime() - a.reminderHoursBefore * 60 * 60 * 1000);
+    if (sendAt > now) continue;
+
+    const location = evt.subFacility
+      ? `${evt.subFacility.facility.name} – ${evt.subFacility.name}`
+      : "";
+
+    let mySignupsToken = "";
+    try {
+      const ev = await prisma.emailVerification.findFirst({
+        where: { email: a.email },
+        select: { token: true },
+      });
+      mySignupsToken = ev?.token ?? "";
+    } catch { /* best-effort */ }
+
+    try {
+      await sendSignupReminder({
+        to: a.email,
+        name: a.name ?? "Volunteer",
+        jobName: a.gameJob.jobTemplate.name,
+        eventTitle: evt.title,
+        eventDate: formatEventDateLong(evt.startTime),
+        startTime: evt.startTime.toISOString(),
+        endTime: evt.endTime.toISOString(),
+        location,
+        hoursUntil: a.reminderHoursBefore,
+        cancelToken: a.cancelToken,
+        mySignupsToken,
+      });
+
+      await prisma.jobAssignment.update({
+        where: { id: a.id },
+        data: { reminderSentAt: new Date() },
+      });
+      sent++;
+    } catch (e) {
+      console.error(`[SWEEP] Reminder failed for assignment ${a.id}:`, e);
+    }
+  }
+
+  if (sent > 0) {
+    console.log(`[pg-boss] Reminder sweep: sent ${sent} missed reminder(s)`);
+  }
+}
+
 function batchWrap<T>(handler: (job: Job<T>) => Promise<void>) {
   return async (jobs: Job<T>[]) => {
     for (const job of jobs) await handler(job);
@@ -286,6 +397,10 @@ function batchWrap<T>(handler: (job: Job<T>) => Promise<void>) {
 }
 
 export async function registerHandlers(boss: PgBoss) {
+  for (const name of Object.values(JOB_NAMES)) {
+    await boss.createQueue(name);
+  }
+
   await boss.work<SendNotificationPayload>(
     JOB_NAMES.SEND_NOTIFICATION,
     batchWrap(handleSendNotification)
@@ -310,6 +425,10 @@ export async function registerHandlers(boss: PgBoss) {
     await handleAuditLogRetention();
   });
 
+  await boss.work(JOB_NAMES.REMINDER_SWEEP, async () => {
+    await handleReminderSweep();
+  });
+
   await boss.schedule(JOB_NAMES.UNFILLED_JOBS_CHECK, "0 * * * *", {}, {
     singletonKey: "unfilled-jobs-hourly",
   });
@@ -318,7 +437,11 @@ export async function registerHandlers(boss: PgBoss) {
     singletonKey: "schedule-event-audit-retention-daily",
   });
 
+  await boss.schedule(JOB_NAMES.REMINDER_SWEEP, "*/5 * * * *", {}, {
+    singletonKey: "reminder-sweep-5min",
+  });
+
   console.log(
-    "[pg-boss] Handlers registered (hourly unfilled check, daily audit retention)"
+    "[pg-boss] Handlers registered (hourly unfilled, daily audit retention, 5-min reminder sweep)"
   );
 }

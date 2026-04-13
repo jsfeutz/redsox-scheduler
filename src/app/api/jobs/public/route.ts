@@ -4,6 +4,7 @@ import { getSeasonTokenExpiry } from "@/lib/token-expiry";
 import { notifyJobSignup } from "@/lib/notify";
 import { isValidComfortLevel } from "@/lib/comfort-level";
 import { formatEventDateLong } from "@/lib/org-datetime";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function GET() {
   const now = new Date();
@@ -141,11 +142,16 @@ export async function POST(req: Request) {
             jobTemplate: { select: { name: true } },
             scheduleEvent: {
               select: {
+                id: true,
                 title: true,
                 startTime: true,
                 endTime: true,
+                team: { select: { organizationId: true } },
                 subFacility: {
-                  select: { name: true, facility: { select: { name: true } } },
+                  select: {
+                    name: true,
+                    facility: { select: { name: true, organizationId: true } },
+                  },
                 },
               },
             },
@@ -153,6 +159,32 @@ export async function POST(req: Request) {
         },
       },
     });
+
+    const signupEvt = assignment.gameJob.scheduleEvent;
+    const signupOrgId =
+      signupEvt?.team?.organizationId ??
+      signupEvt?.subFacility?.facility?.organizationId ??
+      null;
+
+    if (signupOrgId && signupEvt) {
+      void logScheduleEventAudit(prisma, {
+        organizationId: signupOrgId,
+        scheduleEventId: signupEvt.id,
+        action: "VOLUNTEER_SIGNUP",
+        actorUserId: null,
+        actorLabel: `${name.trim()} (${emailTrimmed})`,
+        summary: `${name.trim()} (${emailTrimmed}) signed up for ${assignment.gameJob.jobTemplate.name} – ${signupEvt.title}`,
+        after: {
+          assignmentId: assignment.id,
+          name: name.trim(),
+          email: emailTrimmed,
+          phone: phone?.trim() || null,
+          jobName: assignment.gameJob.jobTemplate.name,
+          eventTitle: signupEvt.title,
+          playerName: assignment.playerName,
+        },
+      });
+    }
 
     let verificationToken: string | null = null;
     try {

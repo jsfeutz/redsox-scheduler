@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { PublicSchedule } from "./public-schedule";
 
 export default async function PublicSchedulePage() {
-  const org = await prisma.organization.findFirst({ select: { id: true } });
+  const org = await prisma.organization.findFirst({ select: { id: true, smsEnabled: true } });
   if (!org) {
     return (
       <div className="min-h-dvh flex items-center justify-center">
@@ -43,7 +43,7 @@ export default async function PublicSchedulePage() {
         </div>
       }
     >
-      <PublicSchedule teams={teams} facilities={facilities} />
+      <PublicSchedule teams={teams} facilities={facilities} smsEnabled={org.smsEnabled} />
     </Suspense>
   );
 }

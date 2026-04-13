@@ -75,7 +75,7 @@ export async function logScheduleEventAudit(
     scheduleEventId?: string | null;
     recurrenceGroupId?: string | null;
     action: ScheduleEventAuditAction;
-    actorUserId: string;
+    actorUserId: string | null;
     actorLabel: string;
     summary?: string | null;
     before?: Prisma.InputJsonValue | null;

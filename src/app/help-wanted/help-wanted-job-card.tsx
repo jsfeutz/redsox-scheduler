@@ -25,9 +25,10 @@ interface HelpWantedJobCardProps {
     askComfortLevel?: boolean;
   };
   autoOpen?: boolean;
+  smsEnabled?: boolean;
 }
 
-export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
+export function HelpWantedJobCard({ job, autoOpen, smsEnabled = true }: HelpWantedJobCardProps) {
   const [assignmentCount, setAssignmentCount] = useState(job.assignmentCount);
   const [names, setNames] = useState(job.volunteerNames);
   const spotsLeft = job.slotsNeeded - assignmentCount;
@@ -91,6 +92,7 @@ export function HelpWantedJobCard({ job, autoOpen }: HelpWantedJobCardProps) {
               eventTime={job.time}
               autoOpen={autoOpen}
               askComfortLevel={job.askComfortLevel}
+              smsEnabled={smsEnabled}
               onSuccess={(name) => {
                 setAssignmentCount((c) => c + 1);
                 if (name) setNames((prev) => [...prev, name]);

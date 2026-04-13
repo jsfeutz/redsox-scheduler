@@ -127,6 +127,7 @@ interface PublicEvent {
 interface Props {
   teams: Team[];
   facilities: Facility[];
+  smsEnabled?: boolean;
 }
 
 const EVENT_TYPES = [
@@ -192,7 +193,7 @@ function publicEventSearchHaystack(event: PublicEvent): string {
     .toLowerCase();
 }
 
-export function PublicSchedule({ teams, facilities }: Props) {
+export function PublicSchedule({ teams, facilities, smsEnabled = true }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -377,8 +378,11 @@ export function PublicSchedule({ teams, facilities }: Props) {
     const sorted = [...events].sort((a, b) =>
       a.startTime.localeCompare(b.startTime)
     );
-    const first = startOfDay(parseISO(sorted[0].startTime));
+    const today = startOfDay(new Date());
+    const earliest = startOfDay(parseISO(sorted[0].startTime));
+    const first = earliest < today ? today : earliest;
     const last = startOfDay(parseISO(sorted[sorted.length - 1].startTime));
+    if (first > last) return [];
     return eachDayOfInterval({ start: first, end: last });
   })();
 
@@ -1089,6 +1093,7 @@ export function PublicSchedule({ teams, facilities }: Props) {
             <EventDetailModal
               event={selectedEvent}
               onClose={() => setSelectedEvent(null)}
+              smsEnabled={smsEnabled}
             />
           )}
 
@@ -1197,9 +1202,11 @@ function EventCard({
 function EventDetailModal({
   event,
   onClose,
+  smsEnabled = true,
 }: {
   event: PublicEvent;
   onClose: () => void;
+  smsEnabled?: boolean;
 }) {
   const [signedUpJobs, setSignedUpJobs] = useState<Set<string>>(new Set());
 
@@ -1364,6 +1371,7 @@ function EventDetailModal({
                             eventDate={format(parseISO(event.startTime), "EEE, MMM d")}
                             eventTime={`${format(parseISO(event.startTime), "h:mm a")} – ${format(parseISO(event.endTime), "h:mm a")}`}
                             askComfortLevel={job.askComfortLevel}
+                            smsEnabled={smsEnabled}
                             onSuccess={() => handleJobSignupSuccess(job.id)}
                           />
                         )}

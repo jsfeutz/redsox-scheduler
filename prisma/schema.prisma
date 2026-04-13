@@ -30,6 +30,8 @@ enum ScheduleEventAuditAction {
   SERIES_CANCEL
   BUMP_PENDING
   TEAM_TRANSFER
+  VOLUNTEER_SIGNUP
+  VOLUNTEER_CANCEL
 }
 
 enum EventType {
@@ -129,6 +131,7 @@ model Organization {
   primaryColor           String   @default("#dc2626")
   themeMode              String   @default("light")
   smsEnabled             Boolean  @default(true)
+  cancelCutoffHours      Float    @default(4)
   reminderHoursBefore    String   @default("24,2")
   /// Incremented when admins upload a custom PWA/header icon; 0 = use static defaults.
   brandingIconVersion    Int      @default(0)
@@ -493,7 +496,8 @@ model JobAssignment {
   comfortLevel      String?
   playerVolunteerId String?
   hoursEarned         Float?
-  reminderHoursBefore Int?
+  reminderHoursBefore Float?
+  reminderSentAt      DateTime?
   cancelToken         String   @unique @default(cuid())
   cancelledAt         DateTime?
   createdAt           DateTime @default(now())

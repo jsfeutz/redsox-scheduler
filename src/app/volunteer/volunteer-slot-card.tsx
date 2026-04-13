@@ -15,9 +15,10 @@ interface VolunteerSlotCardProps {
     slotsNeeded: number;
     signupCount: number;
   };
+  smsEnabled?: boolean;
 }
 
-export function VolunteerSlotCard({ slot }: VolunteerSlotCardProps) {
+export function VolunteerSlotCard({ slot, smsEnabled = true }: VolunteerSlotCardProps) {
   const [showForm, setShowForm] = useState(false);
   const [signupCount, setSignupCount] = useState(slot.signupCount);
   const spotsLeft = slot.slotsNeeded - signupCount;
@@ -74,6 +75,7 @@ export function VolunteerSlotCard({ slot }: VolunteerSlotCardProps) {
           <PublicSignupForm
             slotId={slot.id}
             slotName={slot.name}
+            smsEnabled={smsEnabled}
             onSuccess={() => {
               setSignupCount((c) => c + 1);
               setShowForm(false);

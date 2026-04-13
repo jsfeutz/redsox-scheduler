@@ -15,12 +15,13 @@ function CancelContent() {
   const token = searchParams.get("token");
 
   const [status, setStatus] = useState<
-    "confirm" | "loading" | "success" | "error" | "invalid"
+    "confirm" | "loading" | "success" | "error" | "invalid" | "cutoff"
   >(token ? "confirm" : "invalid");
   const [result, setResult] = useState<{
     jobName?: string;
     eventTitle?: string;
     error?: string;
+    cutoffHours?: number;
   }>({});
 
   async function handleCancel() {
@@ -33,6 +34,11 @@ function CancelContent() {
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 403 && data.cutoffHours) {
+          setResult({ error: data.error, cutoffHours: data.cutoffHours });
+          setStatus("cutoff");
+          return;
+        }
         setResult({ error: data.error || "Failed to cancel" });
         setStatus("error");
         return;
@@ -115,6 +121,24 @@ function CancelContent() {
                   </Link>
                 )}
               </div>
+            </>
+          )}
+
+          {status === "cutoff" && (
+            <>
+              <AlertTriangle className="h-12 w-12 text-amber-500 mb-4" />
+              <h1 className="text-xl font-bold">Too Late to Cancel</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Signups cannot be cancelled within{" "}
+                <strong>{result.cutoffHours} hours</strong> of the event. Please
+                contact an administrator if you need to make changes.
+              </p>
+              <Link
+                href="/help-wanted"
+                className="mt-6 inline-flex items-center justify-center h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-medium px-6"
+              >
+                Back to Volunteer Signup
+              </Link>
             </>
           )}
 

@@ -12,7 +12,7 @@ export async function PUT(req: Request) {
   }
 
   const body = await req.json();
-  const { teamJobsCountHours, teamJobsPublicSignup, requiredVolunteerHours, primaryColor, themeMode, smsEnabled, reminderHoursBefore } = body;
+  const { teamJobsCountHours, teamJobsPublicSignup, requiredVolunteerHours, primaryColor, themeMode, smsEnabled, reminderHoursBefore, cancelCutoffHours } = body;
 
   const data: Record<string, unknown> = {};
   if (typeof teamJobsCountHours === "boolean") {
@@ -36,6 +36,9 @@ export async function PUT(req: Request) {
   if (typeof reminderHoursBefore === "string") {
     data.reminderHoursBefore = reminderHoursBefore;
   }
+  if (typeof cancelCutoffHours === "number") {
+    data.cancelCutoffHours = Math.max(0, cancelCutoffHours);
+  }
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
@@ -44,7 +47,7 @@ export async function PUT(req: Request) {
   const org = await prisma.organization.update({
     where: { id: user.organizationId },
     data,
-    select: { id: true, teamJobsCountHours: true, teamJobsPublicSignup: true, requiredVolunteerHours: true, primaryColor: true, themeMode: true, smsEnabled: true, reminderHoursBefore: true },
+    select: { id: true, teamJobsCountHours: true, teamJobsPublicSignup: true, requiredVolunteerHours: true, primaryColor: true, themeMode: true, smsEnabled: true, reminderHoursBefore: true, cancelCutoffHours: true },
   });
 
   return NextResponse.json(org);

@@ -101,6 +101,7 @@ interface SettingsTabsProps {
   brandingIconVersion: number;
   smsEnabled: boolean;
   reminderHoursBefore: string;
+  cancelCutoffHours: number;
   isAdmin: boolean;
   canManage: boolean;
   templates: TemplateData[];
@@ -123,6 +124,7 @@ export function SettingsTabs({
   brandingIconVersion,
   smsEnabled: initialSmsEnabled,
   reminderHoursBefore: initialReminderHours,
+  cancelCutoffHours: initialCancelCutoff,
   isAdmin,
   canManage,
   templates,
@@ -237,6 +239,10 @@ export function SettingsTabs({
               initialSmsEnabled={initialSmsEnabled}
               initialReminderHours={initialReminderHours}
             />
+          )}
+
+          {isAdmin && (
+            <CancelCutoffSetting initialValue={initialCancelCutoff} />
           )}
 
         </div>
@@ -782,6 +788,79 @@ function SmsNotificationSetting({
           <a href="/terms" className="underline">Terms</a> |{" "}
           <a href="/privacy" className="underline">Privacy</a> |{" "}
           <a href="/sms-consent" className="underline">SMS Consent</a>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CancelCutoffSetting({ initialValue }: { initialValue: number }) {
+  const [hours, setHours] = useState(String(initialValue));
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
+
+  async function handleSave() {
+    const val = parseFloat(hours) || 0;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/organization/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancelCutoffHours: Math.max(0, val) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      toast.success(
+        val > 0
+          ? `Cancellations blocked within ${val} hours of event`
+          : "Cancel cutoff disabled"
+      );
+      router.refresh();
+    } catch {
+      toast.error("Failed to update setting");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl border-border/50">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10">
+            <Clock className="h-5 w-5 text-red-500" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-base">Signup Cancellation Cutoff</CardTitle>
+            <CardDescription className="text-xs">
+              Prevent volunteers from cancelling too close to the event
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-end gap-3 max-w-sm">
+          <div className="grid gap-2 flex-1">
+            <Label className="text-sm font-medium">Hours before event</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.5"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              className="rounded-xl h-10"
+              placeholder="0 = no restriction"
+            />
+          </div>
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-xl h-10"
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Set to 0 to allow cancellations at any time. When set, volunteers will see a notice explaining they cannot cancel within this window.
         </p>
       </CardContent>
     </Card>
