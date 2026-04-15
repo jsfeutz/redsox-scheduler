@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canManageSchedule, canManageTeam } from "@/lib/auth-helpers";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 const FALLBACK_TEMPLATE_NAME = "Manual Job";
 
@@ -195,6 +196,24 @@ export async function POST(req: Request) {
       );
 
       return { gameJob, assignments };
+    });
+
+    const jobName = result.gameJob.overrideName || result.gameJob.jobTemplate.name;
+    const assignedNames = result.assignments.length > 0
+      ? ` — assigned ${result.assignments.length}`
+      : "";
+    await logScheduleEventAudit(prisma, {
+      organizationId: user.organizationId,
+      scheduleEventId: scheduleEventId || null,
+      action: "JOB_CREATE",
+      actorUserId: user.id,
+      actorLabel: `${user.name} (${user.email})`,
+      summary: `Created job: ${jobName}${assignedNames}`,
+      meta: {
+        jobId: result.gameJob.id,
+        templateName: result.gameJob.jobTemplate.name,
+        assignmentCount: result.assignments.length,
+      },
     });
 
     return NextResponse.json(result, { status: 201 });

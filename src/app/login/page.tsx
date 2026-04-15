@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PublicFooter } from "@/components/public-footer";
+import { PublicNav } from "@/components/public-nav";
 import {
   Card,
   CardContent,
@@ -114,10 +115,13 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center px-4 relative overflow-hidden">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-4 relative overflow-hidden pb-20 md:pb-0">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/15 via-background to-background" />
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/5 rounded-full blur-3xl" />
 
+      <div className="relative z-10 mb-6 w-full max-w-sm">
+        <PublicNav hideLogin />
+      </div>
       <Card className="w-full max-w-sm relative z-10 shadow-2xl shadow-black/20 border-border/50 rounded-2xl">
         <CardHeader className="text-center pb-2 pt-8">
           <AuthBrandingMark />

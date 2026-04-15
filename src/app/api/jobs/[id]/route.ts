@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canManageSchedule } from "@/lib/auth-helpers";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function PUT(
   req: Request,
@@ -65,6 +66,18 @@ export async function PUT(
     },
   });
 
+  const jobName = gameJob.overrideName || gameJob.jobTemplate.name;
+  const action = typeof disabled === "boolean" && disabled ? "JOB_DISABLE" as const : "JOB_UPDATE" as const;
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: existing.scheduleEventId,
+    action,
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: action === "JOB_DISABLE" ? `Disabled job: ${jobName}` : `Updated job: ${jobName}`,
+    meta: { jobId: id, templateName: gameJob.jobTemplate.name },
+  });
+
   return NextResponse.json(gameJob);
 }
 
@@ -84,15 +97,28 @@ export async function PATCH(
 
   const existing = await prisma.gameJob.findFirst({
     where: { id, jobTemplate: { organizationId: user.organizationId } },
+    include: { jobTemplate: { select: { name: true } } },
   });
   if (!existing) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
   const body = await req.json();
+  const newDisabled = typeof body.disabled === "boolean" ? body.disabled : !existing.disabled;
   const gameJob = await prisma.gameJob.update({
     where: { id },
-    data: { disabled: typeof body.disabled === "boolean" ? body.disabled : !existing.disabled },
+    data: { disabled: newDisabled },
+  });
+
+  const jobName = existing.overrideName || existing.jobTemplate.name;
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: existing.scheduleEventId,
+    action: newDisabled ? "JOB_DISABLE" : "JOB_UPDATE",
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: newDisabled ? `Disabled job: ${jobName}` : `Re-enabled job: ${jobName}`,
+    meta: { jobId: id },
   });
 
   return NextResponse.json(gameJob);
@@ -114,7 +140,10 @@ export async function DELETE(
 
   const existing = await prisma.gameJob.findFirst({
     where: { id, jobTemplate: { organizationId: user.organizationId } },
-    include: { _count: { select: { assignments: true } } },
+    include: {
+      _count: { select: { assignments: true } },
+      jobTemplate: { select: { name: true } },
+    },
   });
   if (!existing) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
@@ -130,11 +159,21 @@ export async function DELETE(
     );
   }
 
-  // Soft-remove so it disappears from boards/reports without losing history.
   const gameJob = await prisma.gameJob.update({
     where: { id },
     data: { disabled: true },
     select: { id: true, disabled: true },
+  });
+
+  const jobName = existing.overrideName || existing.jobTemplate.name;
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: existing.scheduleEventId,
+    action: "JOB_DISABLE",
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: `Removed job: ${jobName}`,
+    meta: { jobId: id },
   });
 
   return NextResponse.json({ success: true, job: gameJob });

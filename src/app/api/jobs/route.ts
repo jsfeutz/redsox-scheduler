@@ -7,6 +7,7 @@ import {
   canManageTeam,
 } from "@/lib/auth-helpers";
 import type { Prisma } from "@prisma/client";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -138,6 +139,17 @@ export async function POST(req: Request) {
       jobTemplate: true,
       assignments: true,
     },
+  });
+
+  const jobName = gameJob.overrideName || gameJob.jobTemplate.name;
+  await logScheduleEventAudit(prisma, {
+    organizationId: user.organizationId,
+    scheduleEventId: scheduleEventId || null,
+    action: "JOB_CREATE",
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: `Created job: ${jobName} (${gameJob.slotsNeeded} slot${gameJob.slotsNeeded !== 1 ? "s" : ""})`,
+    meta: { jobId: gameJob.id, templateName: gameJob.jobTemplate.name },
   });
 
   return NextResponse.json(gameJob, { status: 201 });

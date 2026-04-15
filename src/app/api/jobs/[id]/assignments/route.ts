@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, canManageSchedule } from "@/lib/auth-helpers";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function POST(
   req: Request,
@@ -65,7 +66,26 @@ export async function POST(
     },
     include: {
       user: { select: { id: true, name: true, email: true } },
+      gameJob: {
+        select: {
+          scheduleEventId: true,
+          overrideName: true,
+          jobTemplate: { select: { name: true, organizationId: true } },
+        },
+      },
     },
+  });
+
+  const jobName = assignment.gameJob.overrideName || assignment.gameJob.jobTemplate.name;
+  const volunteerLabel = assignment.user?.name || assignment.name || "Unknown";
+  await logScheduleEventAudit(prisma, {
+    organizationId: assignment.gameJob.jobTemplate.organizationId,
+    scheduleEventId: assignment.gameJob.scheduleEventId,
+    action: "ASSIGNMENT_ADD",
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: `${jobName} — assigned ${volunteerLabel}`,
+    meta: { assignmentId: assignment.id, jobId: id, volunteerName: volunteerLabel },
   });
 
   return NextResponse.json(assignment, { status: 201 });
@@ -100,6 +120,15 @@ export async function DELETE(
       gameJobId: id,
       gameJob: { jobTemplate: { organizationId: user.organizationId } },
     },
+    include: {
+      gameJob: {
+        select: {
+          scheduleEventId: true,
+          overrideName: true,
+          jobTemplate: { select: { name: true, organizationId: true } },
+        },
+      },
+    },
   });
   if (!assignment) {
     return NextResponse.json(
@@ -109,6 +138,18 @@ export async function DELETE(
   }
 
   await prisma.jobAssignment.delete({ where: { id: assignmentId } });
+
+  const jobName = assignment.gameJob.overrideName || assignment.gameJob.jobTemplate.name;
+  const volunteerLabel = assignment.name || "Unknown";
+  await logScheduleEventAudit(prisma, {
+    organizationId: assignment.gameJob.jobTemplate.organizationId,
+    scheduleEventId: assignment.gameJob.scheduleEventId,
+    action: "ASSIGNMENT_REMOVE",
+    actorUserId: user.id,
+    actorLabel: `${user.name} (${user.email})`,
+    summary: `${jobName} — removed ${volunteerLabel}`,
+    meta: { assignmentId, jobId: id, volunteerName: volunteerLabel },
+  });
 
   return NextResponse.json({ success: true });
 }

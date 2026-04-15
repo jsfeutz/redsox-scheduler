@@ -9,6 +9,7 @@ import {
   Calendar,
   Heart,
   BarChart3,
+  FileText,
   Settings,
   MoreHorizontal,
   MapPin,
@@ -31,6 +32,7 @@ const primaryTabs = [
 const moreTabs: { href: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[] = [
   { href: "/dashboard/facilities", label: "Facilities", icon: MapPin },
   { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
+  { href: "/dashboard/documents", label: "Documents", icon: FileText },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/users", label: "Users", icon: UsersRound, adminOnly: true },
   { href: "/dashboard/profile", label: "Profile", icon: UserCog },

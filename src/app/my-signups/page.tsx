@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useVolunteerIdentity } from "@/components/providers/volunteer-identity";
 import { PublicFooter } from "@/components/public-footer";
+import { PublicNav } from "@/components/public-nav";
 
 interface Signup {
   id: string;
@@ -130,10 +131,11 @@ function MySignupsContent() {
   }
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh bg-background pb-20 md:pb-0">
       <div className="bg-gradient-to-b from-primary/10 via-background to-background">
-        <div className="mx-auto max-w-xl px-4 py-10 sm:py-16">
-          <div className="mb-8 text-center">
+        <div className="mx-auto max-w-xl px-4 py-6 sm:py-16">
+          <PublicNav />
+          <div className="mb-8 mt-4 text-center">
             <div className="mx-auto mb-5 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-white shadow-lg shadow-primary/25">
               <ClipboardList className="h-7 w-7" />
             </div>
@@ -289,15 +291,6 @@ function MySignupsContent() {
             </div>
           )}
 
-          <div className="mt-10 flex items-center justify-center gap-4 text-sm">
-            <Link href="/" className="text-primary hover:underline font-medium">
-              Home
-            </Link>
-            <span className="text-border">|</span>
-            <Link href="/help-wanted" className="text-primary hover:underline font-medium">
-              Volunteer Signup
-            </Link>
-          </div>
           <PublicFooter />
         </div>
       </div>

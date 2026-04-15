@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Smartphone, Share, PlusSquare, Loader2, CheckCircle2 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -15,6 +16,7 @@ import {
 import { usePwaInstall } from "@/components/providers/pwa-install-provider";
 import { toast } from "sonner";
 import { PublicFooter } from "@/components/public-footer";
+import { PublicNav } from "@/components/public-nav";
 
 function isIos(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -45,13 +47,14 @@ export function InstallAppContent() {
   }
 
   return (
-    <div className="min-h-dvh bg-background flex flex-col">
-      <div className="flex-1 mx-auto w-full max-w-lg px-4 py-10 md:py-14">
-        <div className="text-center mb-8">
+    <div className="min-h-dvh bg-background flex flex-col pb-20 md:pb-0">
+      <div className="flex-1 mx-auto w-full max-w-lg px-4 py-6 md:py-14">
+        <PublicNav />
+        <div className="text-center mb-8 mt-4">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-4">
             <Smartphone className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Install the app</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Install the Redsox App</h1>
           <p className="text-sm text-muted-foreground mt-2">
             Add Rubicon Redsox Scheduler to your home screen for quick access and
             a full-screen experience.
@@ -186,27 +189,6 @@ export function InstallAppContent() {
             )}
           </div>
         )}
-
-        <div className="mt-10 flex flex-col gap-2 items-center">
-          <Link
-            href="/dashboard"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "rounded-xl"
-            )}
-          >
-            Back to dashboard
-          </Link>
-          <Link
-            href="/schedule"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "rounded-xl"
-            )}
-          >
-            Public schedule
-          </Link>
-        </div>
 
         <PublicFooter />
       </div>

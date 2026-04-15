@@ -54,7 +54,6 @@ import {
   Clock,
   Users,
   Loader2,
-  Hand,
   ExternalLink,
   X,
   Search,
@@ -67,6 +66,7 @@ import { CalendarSubscribeButton } from "@/components/schedules/calendar-subscri
 import { FacilityFilterCombobox } from "@/components/schedules/facility-filter-combobox";
 import { ShareScheduleButton } from "@/components/schedules/share-schedule-button";
 import { PublicFooter } from "@/components/public-footer";
+import { PublicNav } from "@/components/public-nav";
 import {
   buildPublicScheduleUrlParams,
   parsePublicScheduleUrl,
@@ -427,13 +427,14 @@ export function PublicSchedule({ teams, facilities, smsEnabled = true }: Props) 
   );
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh bg-background pb-20 md:pb-0">
       <div className="bg-gradient-to-b from-primary/10 via-background to-background">
         <div className="mx-auto max-w-6xl px-4 py-6 sm:py-12">
           {/* Header */}
-          <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
+          <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
+            <PublicNav />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+              <div className="flex items-center gap-3">
                 <BrandingMark variant="schedule" />
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
@@ -444,27 +445,20 @@ export function PublicSchedule({ teams, facilities, smsEnabled = true }: Props) 
                   </p>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Link
-                href="/help-wanted"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-2.5 text-base font-medium hover:bg-accent/50 transition-colors touch-manipulation"
-              >
-                <Hand className="h-5 w-5 shrink-0" />
-                Volunteer Signup
-              </Link>
-              <CalendarSubscribeButton
-                icalPath={icalUrl}
-                variant="compact"
-                className="md:hidden"
-              />
-              <CalendarSubscribeButton
-                icalPath={icalUrl}
-                className="hidden md:block"
-                triggerClassName="rounded-xl h-auto py-2.5 px-4 border-border/50 bg-card"
-              />
-              <ShareScheduleButton compact className="md:hidden" />
-              <ShareScheduleButton className="hidden md:inline-flex rounded-xl h-auto py-2.5 px-4 border-border/50 bg-card" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <CalendarSubscribeButton
+                  icalPath={icalUrl}
+                  variant="compact"
+                  className="md:hidden"
+                />
+                <CalendarSubscribeButton
+                  icalPath={icalUrl}
+                  className="hidden md:block"
+                  triggerClassName="rounded-xl h-auto py-2.5 px-4 border-border/50 bg-card"
+                />
+                <ShareScheduleButton compact className="md:hidden" />
+                <ShareScheduleButton className="hidden md:inline-flex rounded-xl h-auto py-2.5 px-4 border-border/50 bg-card" />
+              </div>
             </div>
           </div>
 
@@ -1097,29 +1091,6 @@ export function PublicSchedule({ teams, facilities, smsEnabled = true }: Props) 
             />
           )}
 
-          {/* Footer */}
-          <div className="mt-10 flex items-center justify-center gap-4 text-sm">
-            <Link
-              href="/"
-              className="text-primary hover:underline font-medium"
-            >
-              Home
-            </Link>
-            <span className="text-border">|</span>
-            <Link
-              href="/help-wanted"
-              className="text-primary hover:underline font-medium"
-            >
-              Volunteer Signup
-            </Link>
-            <span className="text-border">|</span>
-            <Link
-              href="/my-signups"
-              className="text-primary hover:underline font-medium"
-            >
-              My Signups
-            </Link>
-          </div>
           <PublicFooter />
         </div>
       </div>

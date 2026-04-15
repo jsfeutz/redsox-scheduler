@@ -145,11 +145,14 @@ export function EventAuditReport() {
   }
 
   const actionVariant = (a: string) => {
-    if (a === "CREATE" || a === "VOLUNTEER_SIGNUP") return "default" as const;
-    if (a === "UPDATE" || a === "TEAM_TRANSFER") return "secondary" as const;
-    if (a === "REMOVE" || a === "SERIES_CANCEL" || a === "BUMP_PENDING")
+    if (a === "CREATE" || a === "VOLUNTEER_SIGNUP" || a === "JOB_CREATE" || a === "ASSIGNMENT_ADD" || a === "SLOT_SIGNUP")
+      return "default" as const;
+    if (a === "UPDATE" || a === "TEAM_TRANSFER" || a === "JOB_UPDATE")
+      return "secondary" as const;
+    if (a === "REMOVE" || a === "SERIES_CANCEL" || a === "BUMP_PENDING" || a === "JOB_DISABLE")
       return "outline" as const;
-    if (a === "VOLUNTEER_CANCEL") return "destructive" as const;
+    if (a === "VOLUNTEER_CANCEL" || a === "ASSIGNMENT_REMOVE")
+      return "destructive" as const;
     return "destructive" as const;
   };
 

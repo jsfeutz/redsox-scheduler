@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logScheduleEventAudit } from "@/lib/schedule-event-audit";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -80,6 +81,16 @@ export async function POST(req: Request) {
       data: { status: "FILLED" },
     });
   }
+
+  await logScheduleEventAudit(prisma, {
+    organizationId: orgId,
+    scheduleEventId: slot.scheduleEventId,
+    action: "SLOT_SIGNUP",
+    actorUserId: null,
+    actorLabel: `${name.trim()} (${email.trim()})`,
+    summary: `Volunteer slot signup: ${name.trim()}`,
+    meta: { slotId: volunteerSlotId, signupId: signup.id },
+  });
 
   return NextResponse.json(signup, { status: 201 });
 }

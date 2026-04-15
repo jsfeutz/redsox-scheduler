@@ -51,6 +51,7 @@ import {
   Copy,
   Check,
   Minus,
+  FileText,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ import { TeamRoster } from "@/components/teams/team-roster";
 import { JobSlotRow } from "@/components/jobs/job-slot-row";
 import type { JobSlotData } from "@/components/jobs/job-slot-row";
 import { AddJobToEvent } from "@/components/jobs/add-job-to-event";
+import { DocumentManager } from "@/components/documents/document-manager";
 
 interface TeamMember {
   id: string;
@@ -220,6 +222,7 @@ export function TeamDetailTabs({
     { value: "schedule", label: "Schedule", icon: Calendar },
     { value: "staff", label: "Staff", icon: Users },
     { value: "roster", label: "Roster", icon: Users },
+    { value: "documents", label: "Documents", icon: FileText },
     ...(canManage ? [{ value: "settings", label: "Settings", icon: Settings }] : []),
   ];
 
@@ -362,6 +365,15 @@ export function TeamDetailTabs({
 
       <TabsContent value="roster" className="overflow-y-auto min-h-0">
         <TeamRoster teamId={team.id} canManage={canManage} />
+      </TabsContent>
+
+      <TabsContent value="documents" className="overflow-y-auto min-h-0">
+        <DocumentManager
+          lockedTeamId={team.id}
+          allowOrgWide={false}
+          canCreate={canManage}
+          teams={[{ id: team.id, name: team.name }]}
+        />
       </TabsContent>
 
       {canManage && (

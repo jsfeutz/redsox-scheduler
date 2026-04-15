@@ -32,6 +32,12 @@ enum ScheduleEventAuditAction {
   TEAM_TRANSFER
   VOLUNTEER_SIGNUP
   VOLUNTEER_CANCEL
+  JOB_CREATE
+  JOB_UPDATE
+  JOB_DISABLE
+  ASSIGNMENT_ADD
+  ASSIGNMENT_REMOVE
+  SLOT_SIGNUP
 }
 
 enum EventType {
@@ -122,6 +128,21 @@ enum NotifScope {
   SPECIFIC_TEAM
 }
 
+enum DocumentType {
+  FILE
+  LINK
+}
+
+enum DocumentVisibility {
+  PUBLIC
+  MEMBERS_ONLY
+}
+
+enum DocumentScope {
+  ORG_WIDE
+  TEAM
+}
+
 model Organization {
   id                     String   @id @default(cuid())
   name                   String
@@ -149,6 +170,7 @@ model Organization {
   schedulingRules           SchedulingRule[]
   notificationSubscriptions NotificationSubscription[]
   scheduleEventAuditLogs    ScheduleEventAuditLog[]
+  documents                 Document[]
 }
 
 model User {
@@ -172,9 +194,40 @@ model User {
   slotRequestsResponded     SlotRequest[]           @relation("SlotRequestsResponded")
   adminNotificationPrefs    AdminNotificationPref[]
   notificationSubscriptions NotificationSubscription[]
+  documentsUploaded         Document[]
 
   @@index([organizationId])
   @@index([email])
+}
+
+model Document {
+  id               String             @id @default(cuid())
+  title            String
+  description      String?
+  category         String?
+  tags             String             @default("")
+  type             DocumentType
+  storageKey       String?
+  fileName         String?
+  fileSizeBytes    Int?
+  mimeType         String?
+  externalUrl      String?
+  visibility       DocumentVisibility
+  scope            DocumentScope
+  teamId           String?
+  organizationId   String
+  uploadedById     String?
+  sortOrder        Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  uploadedBy   User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([visibility])
 }
 
 model AdminNotificationPref {
@@ -285,6 +338,7 @@ model Team {
   players                   Player[]
   schedulingRules           SchedulingRule[]
   notificationSubscriptions NotificationSubscription[]
+  documents                 Document[]
 
   @@index([organizationId])
 }

@@ -802,19 +802,19 @@ function CardView({
 
 function TableView({ jobs, highlightedId, highlightJobId, highlightRef, smsEnabled = true }: { jobs: JobData[]; highlightedId: string | null; highlightJobId: string | null; highlightRef: React.RefObject<HTMLTableRowElement | null>; smsEnabled?: boolean }) {
   return (
-    <Card className="rounded-2xl border-border/50">
+    <Card className="rounded-2xl border-border/50 overflow-hidden">
       {/* Desktop table */}
-      <div className="hidden sm:block overflow-visible">
-        <table className="w-full text-base">
+      <div className="hidden sm:block overflow-x-auto">
+        <table className="w-full text-sm min-w-[700px]">
           <thead>
-            <tr className="border-b border-border/50 text-muted-foreground text-sm font-semibold uppercase tracking-wider">
-              <th className="text-left px-4 py-3 whitespace-nowrap">Date</th>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Time</th>
-              <th className="text-left px-4 py-3">Job</th>
-              <th className="text-left px-4 py-3">Team</th>
-              <th className="text-left px-4 py-3">Facility</th>
-              <th className="text-center px-3 py-3 whitespace-nowrap">Spots</th>
-              <th className="text-right px-4 py-3 whitespace-nowrap">Action</th>
+            <tr className="border-b border-border/50 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+              <th className="text-left pl-4 pr-2 py-3 whitespace-nowrap w-[70px]">Date</th>
+              <th className="text-left px-2 py-3 whitespace-nowrap w-[72px]">Time</th>
+              <th className="text-left px-2 py-3">Job</th>
+              <th className="text-left px-2 py-3 w-[100px]">Team</th>
+              <th className="text-left px-2 py-3 w-[120px]">Facility</th>
+              <th className="text-center px-2 py-3 whitespace-nowrap w-[80px]">Spots</th>
+              <th className="text-right pr-4 pl-2 py-3 whitespace-nowrap w-[80px]"></th>
             </tr>
           </thead>
           <tbody>
@@ -843,21 +843,21 @@ function TableRow({ job, highlighted, autoOpen, highlightRef, smsEnabled = true 
 
   return (
     <tr ref={highlightRef} className={cn("border-b border-border/30 last:border-0 hover:bg-accent/20 transition-colors", highlighted && "ring-2 ring-primary bg-primary/5")}>
-      <td className="px-4 py-3 whitespace-nowrap font-medium">
+      <td className="pl-4 pr-2 py-2.5 whitespace-nowrap font-medium">
         {format(parseISO(job.startTime), "MMM d")}
       </td>
-      <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+      <td className="px-2 py-2.5 whitespace-nowrap text-muted-foreground">
         {format(parseISO(job.startTime), "h:mm a")}
       </td>
-      <td className="px-4 py-3">
-        <div className="font-medium truncate">{job.templateName}</div>
+      <td className="px-2 py-2.5">
+        <div className="font-medium">{job.templateName}</div>
         {job.templateDescription && (
-          <div className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
+          <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
             {job.templateDescription}
           </div>
         )}
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-sm text-muted-foreground truncate">
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs text-muted-foreground truncate">
             {job.eventTitle}
           </span>
           <span className="text-xs text-muted-foreground shrink-0">
@@ -865,23 +865,23 @@ function TableRow({ job, highlighted, autoOpen, highlightRef, smsEnabled = true 
           </span>
         </div>
       </td>
-      <td className="px-4 py-3">
-        <span className="flex items-center gap-2">
+      <td className="px-2 py-2.5">
+        <span className="flex items-center gap-1.5">
           <span
-            className="h-2.5 w-2.5 rounded-full shrink-0"
+            className="h-2 w-2 rounded-full shrink-0"
             style={{ backgroundColor: job.teamColor }}
           />
           <span className="truncate">{job.teamName}</span>
         </span>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-2 py-2.5">
         <span className="truncate block text-muted-foreground">
           {job.facilityName}
         </span>
       </td>
-      <td className="px-3 py-3">
-        <div className="flex flex-col items-center gap-1">
-          <div className="flex items-center gap-1 text-sm font-bold">
+      <td className="px-2 py-2.5">
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="flex items-center gap-0.5 text-sm font-bold">
             <span className={spotsLeft > 0 ? "text-primary" : "text-emerald-500"}>
               {count}
             </span>
@@ -903,13 +903,13 @@ function TableRow({ job, highlighted, autoOpen, highlightRef, smsEnabled = true 
             />
           </div>
           {names.length > 0 && (
-            <p className="text-xs text-muted-foreground leading-snug mt-0.5 text-center max-w-[120px] truncate">
+            <p className="text-xs text-muted-foreground leading-snug mt-0.5 text-center max-w-[100px] truncate">
               {names.join(", ")}
             </p>
           )}
         </div>
       </td>
-      <td className="px-4 py-3 text-right">
+      <td className="pr-4 pl-2 py-2.5 text-right">
         {spotsLeft > 0 ? (
           <PublicJobSignup
             jobId={job.id}
@@ -927,7 +927,7 @@ function TableRow({ job, highlighted, autoOpen, highlightRef, smsEnabled = true 
             }}
           />
         ) : (
-          <Badge className="bg-emerald-500/15 text-emerald-500 border-0 rounded-lg text-sm">
+          <Badge className="bg-emerald-500/15 text-emerald-500 border-0 rounded-lg text-xs">
             Full
           </Badge>
         )}
@@ -943,72 +943,75 @@ function MobileTableRow({ job, autoOpen, smsEnabled = true }: { job: JobData; au
   const fillPct = Math.min((count / job.slotsNeeded) * 100, 100);
 
   return (
-    <div className="px-3 py-2.5 space-y-1.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-base truncate">{job.templateName}</span>
-            <Badge
-              variant={spotsLeft > 0 ? "secondary" : "default"}
-              className="rounded text-xs md:text-sm px-2 py-0.5 shrink-0"
-            >
-              {spotsLeft > 0 ? `${spotsLeft} left` : "Full"}
-            </Badge>
-          </div>
-          {job.templateDescription && (
-            <div className="text-sm text-muted-foreground line-clamp-2 mt-0.5">
-              {job.templateDescription}
-            </div>
-          )}
-          <div className="flex items-center gap-1 mt-0.5 text-sm text-muted-foreground">
-            <span
-              className="h-1.5 w-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: job.teamColor }}
-            />
-            <span className="truncate">{job.teamName}</span>
-            <span>&middot;</span>
-            <span className="shrink-0">{format(parseISO(job.startTime), "MMM d, h:mm a")}</span>
-          </div>
-          <div className="text-sm text-muted-foreground truncate">
-            {job.facilityName} &middot; {job.eventTitle}
-          </div>
+    <div className="px-3 py-3 space-y-2">
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-semibold text-[15px]">{job.templateName}</span>
+          <Badge
+            variant={spotsLeft > 0 ? "secondary" : "default"}
+            className="rounded text-xs px-1.5 py-0 shrink-0"
+          >
+            {spotsLeft > 0 ? `${spotsLeft} left` : "Full"}
+          </Badge>
         </div>
-        {spotsLeft > 0 && (
-          <div className="shrink-0 pt-0.5">
-            <PublicJobSignup
-              jobId={job.id}
-              jobName={job.templateName}
-              eventTitle={job.eventTitle}
-              eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
-              eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
-              autoOpen={autoOpen}
-              askComfortLevel={job.askComfortLevel}
-              smsEnabled={smsEnabled}
-              onSuccess={(name) => {
-                setCount((c) => c + 1);
-                if (name) setNames((prev) => [...prev, name]);
-              }}
-            />
-          </div>
+        {job.templateDescription && (
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            {job.templateDescription}
+          </p>
         )}
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              fillPct >= 100
-                ? "bg-emerald-500"
-                : fillPct >= 50
-                  ? "bg-amber-500"
-                  : "bg-red-500"
-            )}
-            style={{ width: `${fillPct}%` }}
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          <span
+            className="h-1.5 w-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: job.teamColor }}
           />
+          <span className="truncate">{job.teamName}</span>
+          <span>&middot;</span>
+          <span className="shrink-0">{format(parseISO(job.startTime), "MMM d, h:mm a")}</span>
         </div>
-        <span className="text-sm text-muted-foreground font-medium shrink-0">
-          {count}/{job.slotsNeeded}
-        </span>
+        <div className="text-sm text-muted-foreground truncate">
+          {job.facilityName} &middot; {job.eventTitle}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                fillPct >= 100
+                  ? "bg-emerald-500"
+                  : fillPct >= 50
+                    ? "bg-amber-500"
+                    : "bg-red-500"
+              )}
+              style={{ width: `${fillPct}%` }}
+            />
+          </div>
+          <span className="text-sm text-muted-foreground font-medium shrink-0">
+            {count}/{job.slotsNeeded}
+          </span>
+        </div>
+        {spotsLeft > 0 ? (
+          <PublicJobSignup
+            jobId={job.id}
+            jobName={job.templateName}
+            eventTitle={job.eventTitle}
+            eventDate={format(parseISO(job.startTime), "EEE, MMM d")}
+            eventTime={`${format(parseISO(job.startTime), "h:mm a")} – ${format(parseISO(job.endTime), "h:mm a")}`}
+            autoOpen={autoOpen}
+            askComfortLevel={job.askComfortLevel}
+            smsEnabled={smsEnabled}
+            onSuccess={(name) => {
+              setCount((c) => c + 1);
+              if (name) setNames((prev) => [...prev, name]);
+            }}
+          />
+        ) : (
+          <Badge className="bg-emerald-500/15 text-emerald-500 border-0 rounded text-xs shrink-0">
+            Full
+          </Badge>
+        )}
       </div>
     </div>
   );
