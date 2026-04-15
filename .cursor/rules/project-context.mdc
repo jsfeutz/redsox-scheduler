@@ -1,0 +1,45 @@
+---
+description: Project context for AI agents working on this codebase
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Redsox Scheduler — Project Context
+
+## What This Is
+Single-tenant scheduling app for the **Rubicon Redsox** baseball club.
+Deployed at **https://schedule.rubiconredsox.com** on AWS Lightsail.
+
+## Important Rules
+- This is a **single-tenant** deployment. There is ONE organization in the database.
+- Do **NOT** add multi-tenancy, subdomain routing, billing, Stripe, or signup flows here.
+- Multi-tenant SaaS features belong in the **grandslate** repo (`/src/feutz/grandslate`).
+- Public pages resolve the org via `prisma.organization.findFirst()` — this is intentional for single-tenant.
+- `NEXTAUTH_URL` is a single fixed domain: `https://schedule.rubiconredsox.com`
+
+## Tech Stack
+- Next.js 14 (App Router, standalone output)
+- Prisma ORM + PostgreSQL (RDS)
+- NextAuth.js (credentials provider, JWT strategy)
+- Tailwind CSS + shadcn-style components
+- AWS S3 for file storage (branding + documents)
+- AWS SNS for SMS notifications
+- Resend for email
+
+## Deployment
+- AWS Lightsail Container Service (`redsox-schedule-app`, `us-east-2`)
+- Docker image: multi-stage build, `node:20-alpine`
+- Container CMD runs `prisma migrate deploy` then `node server.js`
+- Push via `aws lightsail push-container-image` + `create-container-service-deployment`
+
+## Key Environment Variables
+- `DATABASE_URL` — RDS PostgreSQL connection string
+- `BRANDING_S3_BUCKET` — S3 bucket for branding icons and documents
+- `AWS_ACCESS_KEY_ID_SNS` / `AWS_SECRET_ACCESS_KEY_SNS` — IAM keys for S3 + SNS
+- `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
+- `RESEND_API_KEY`, `SMTP_*` — email config
+
+## Sister Repo
+The **Grand Slate** multi-tenant SaaS version lives at `github.com/jsfeutz/grandslate`.
+Bug fixes and features that apply to both repos should be cherry-picked between them.
